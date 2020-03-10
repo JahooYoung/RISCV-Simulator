@@ -1,4 +1,6 @@
-#include <stdio.h>
+#ifndef ELF_HPP
+#define ELF_HPP
+
 #include <stdint.h>
 
 /* Type for a 16-bit quantity.  */
@@ -18,7 +20,7 @@ typedef uint64_t Elf64_Addr;
 /* Type of file offsets.  */
 typedef uint64_t Elf64_Off;
 
-typedef struct
+struct Elf64_Ehdr
 {
     unsigned char e_ident[16]; /* ELF identification */
     Elf64_Half e_type;         /* Object file type */
@@ -34,7 +36,7 @@ typedef struct
     Elf64_Half e_shentsize;    /* Size of section header entry */
     Elf64_Half e_shnum;        /* Number of section header entries */
     Elf64_Half e_shstrndx;     /* Section name string table index */
-} Elf64_Ehdr;
+};
 
 /* Conglomeration of the identification bytes, for easy testing as a word.  */
 #define	ELFMAG		"\177ELF"
@@ -48,7 +50,7 @@ typedef struct
 #define EI_PAD 9
 #define EI_NIDENT 16
 
-typedef struct
+struct Elf64_Shdr
 {
     Elf64_Word sh_name;       /* Section name */
     Elf64_Word sh_type;       /* Section type */
@@ -60,7 +62,7 @@ typedef struct
     Elf64_Word sh_info;       /* Miscellaneous information */
     Elf64_Xword sh_addralign; /* Address alignment boundary */
     Elf64_Xword sh_entsize;   /* Size of entries, if section has table */
-} Elf64_Shdr;
+};
 
 /* Legal values for sh_type (section type).  */
 #define SHT_NULL	  0		/* Section header table entry unused */
@@ -77,7 +79,7 @@ typedef struct
 #define SHN_ABS 0xFFF1
 #define SHN_COMMON 0xFFF2
 
-typedef struct
+struct Elf64_Sym
 {
     Elf64_Word st_name;     /* Symbol name */
     unsigned char st_info;  /* Type and Binding attributes */
@@ -85,7 +87,7 @@ typedef struct
     Elf64_Half st_shndx;    /* Section table index */
     Elf64_Addr st_value;    /* Symbol value */
     Elf64_Xword st_size;    /* Size of object (e.g., common) */
-} Elf64_Sym;
+};
 
 /* How to extract and insert information held in the st_info field.  */
 
@@ -98,7 +100,7 @@ typedef struct
 #define ELF64_ST_TYPE(val)		ELF32_ST_TYPE (val)
 #define ELF64_ST_INFO(bind, type)	ELF32_ST_INFO ((bind), (type))
 
-typedef struct
+struct Elf64_Phdr
 {
     Elf64_Word p_type;    /* Type of segment */
     Elf64_Word p_flags;   /* Segment attributes */
@@ -108,7 +110,7 @@ typedef struct
     Elf64_Xword p_filesz; /* Size of segment in file */
     Elf64_Xword p_memsz;  /* Size of segment in memory */
     Elf64_Xword p_align;  /* Alignment of segment */
-} Elf64_Phdr;
+};
 
 void read_elf();
 void read_elf_header();
@@ -116,25 +118,4 @@ void read_section_headers();
 void read_symtable();
 void read_program_headers();
 
-//代码段在解释文件中的偏移地址
-unsigned int cadr = 0;
-
-//代码段的长度
-unsigned int csize = 0;
-
-//代码段在内存中的虚拟地址
-unsigned int vadr = 0;
-
-//全局数据段在内存的地址
-unsigned long long gp = 0;
-
-//main函数在内存中地址
-unsigned int madr = 0;
-
-//程序结束时的PC
-unsigned int endPC = 0;
-
-//程序的入口地址
-unsigned int entry = 0;
-
-FILE *file = NULL;
+#endif

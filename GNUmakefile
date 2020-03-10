@@ -1,5 +1,5 @@
 CXX := g++
-CXXFLAGS := -Wall -O2 -std=c++11 -MD
+CXXFLAGS := -Wall -O2 -std=c++17 -MD
 LFLAGS := -O2
 PREFIX := build
 TARGET := simulator
@@ -20,7 +20,7 @@ $(PREFIX)/$(TARGET): $(OBJS)
 	$(CXX) $(LFLAGS) -o $@ $^
 
 $(PREFIX)/%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) -Iinclude -c -o $@ $<
 
 $(PREFIX)/.deps: $(wildcard $(PREFIX)/*.d)
 	@perl mergedep.pl $@ $^
@@ -30,10 +30,16 @@ $(PREFIX)/.deps: $(wildcard $(PREFIX)/*.d)
 clean:
 	rm -rf $(PREFIX)
 
+.PRECIOUS: $(SAMPLE_PREFIX)/%
+
+run-%-info: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
+	$(PREFIX)/$(TARGET) -i $<-info.txt $<
+
 run-%: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
 	$(PREFIX)/$(TARGET) $<
 
 sample-%: $(SAMPLE_PREFIX)/%
+	@:
 
 $(SAMPLE_PREFIX)/%: $(SAMPLE_PREFIX)/%.c
 	$(RISCV_CC) -Wa,-march=rv64i -o $(SAMPLE_PREFIX)/$* $<
