@@ -1,9 +1,11 @@
 #include <iostream>
 #include <cstring>
+#include <cctype>
 #include "elf_reader.hpp"
 using namespace std;
 
-ElfReader::ElfReader(const string& elf_filename)
+ElfReader::ElfReader(const string& _elf_filename)
+    : elf_filename(_elf_filename)
 {
     elf_file = fopen(elf_filename.c_str(), "rb");
     if (!elf_file) {
@@ -147,6 +149,31 @@ void ElfReader::output_elf_info(const string& info_filename)
     read_symtable();
 
     fclose(info_file);
+}
+
+void ElfReader::load_objdump(const string& objdump_path, InstructionMap& inst_map)
+{
+    string cmd = objdump_path + " -d " + elf_filename;
+    FILE *objdump_out = popen(cmd.c_str(), "r");
+
+    size_t n = 100;
+    char *line = new char[n];
+    char buf[100];
+    while (getline(&line, &n, objdump_out) > 0) {
+        int len = strlen(line);
+        if (len < 9 || line[8] != ':')
+            continue;
+        line[len - 1] = '\0';  // remove '\n'
+        uintptr_t addr = strtol(line, NULL, 16);
+        char *st = line + 20;
+        while (!isalpha(*st))
+            st++;
+        sprintf(buf, "%5lx:   ", addr);
+        inst_map[addr] = buf + string(st);
+    }
+    delete[] line;
+
+    pclose(objdump_out);
 }
 
 void ElfReader::load_elf(reg_t& pc, MemorySystem& mem_sys)

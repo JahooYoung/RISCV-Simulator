@@ -22,13 +22,16 @@ class MemorySystem
 private:
     std::map<uintptr_t, pte_t> page_table;
 
+    uintptr_t translate(reg_t ptr);
+
 public:
     // MemorySystem();
     ~MemorySystem();
+    pte_t page_alloc(uintptr_t va);
     void load_segment(FILE *file, const Elf64_Phdr& phdr);
     int read_inst(reg_t ptr, inst_t& st);
     int read_data(reg_t ptr, reg_t& st);
-    int write_data(reg_t ptr, reg_t& st, int bytes);
+    int write_data(reg_t ptr, reg_t st, int bytes);
 };
 
 #endif

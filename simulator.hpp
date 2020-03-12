@@ -10,8 +10,11 @@ class Simulator
 {
 private:
     ElfReader elf_reader;
+    InstructionMap inst_map;
 
+    bool disasemble;
     bool single_step;
+    bool data_forwarding;
 
     MemorySystem mem_sys;
     BranchPredictor *br_pred;

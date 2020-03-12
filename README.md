@@ -10,6 +10,14 @@
 - 配置文件：https://github.com/nlohmann/json
 - 支持单步模式，并支持查看寄存器和内存
   - 分成SEQ模式和PIPE模式
+- 图形界面？Web？
+
+### TODO
+
+- 多周期
+- 单步（类似gdb）
+- 查看内存，支持符号
+- 处理ecall
 
 ### 架构
 

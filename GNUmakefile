@@ -36,7 +36,7 @@ run-%-info: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
 	$(PREFIX)/$(TARGET) -i $<-info.txt $<
 
 run-%: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
-	$(PREFIX)/$(TARGET) $<
+	$(PREFIX)/$(TARGET) $< > samples/output.txt
 
 sample-%: $(SAMPLE_PREFIX)/%
 	@:
