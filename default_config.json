@@ -1,3 +1,4 @@
 {
-    "disasemble": true
+    "disasemble": true,
+    "data_forwarding": true
 }

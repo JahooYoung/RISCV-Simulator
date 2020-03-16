@@ -1,5 +1,6 @@
 #include <cstring>
 #include <string>
+#include <iostream>
 #include "simulator.hpp"
 #include "decode_helpers.hpp"
 using namespace std;
@@ -13,10 +14,11 @@ const char *reg_abi_name[32] = {
 };
 
 Simulator::Simulator(const json& config)
-    : elf_reader(config["elf_file"].get<string>()),
-    disasemble(config.value("disasemble", false)),
+    : disasemble(config.value("disasemble", false)),
     single_step(config.value("single_step", false)),
-    data_forwarding(config.value("data_forwarding", false))
+    data_forwarding(config.value("data_forwarding", true)),
+    verbose(config.value("verbose", false)),
+    elf_reader(config["elf_file"].get<string>())
 {
     string info_file = config.value("info_file", "");
     if (info_file != "")
@@ -33,7 +35,7 @@ Simulator::~Simulator()
 
 void Simulator::IF()
 {
-    // TODO: select pc
+    // select pc
     reg_t pc = F.predPC;
     if (((M.opcode == OP_BRANCH && M.cond) || M.opcode == OP_JALR || M.opcode == OP_JAL)
         && M.predPC != M.valE)
@@ -45,18 +47,7 @@ void Simulator::IF()
     if ((d.inst & 3) != 3)
         d.inst &= 0xFFFF;
     d.valP = pc;
-
-    // write asm_str
-    // char buf[100];
-    // if ((d.inst & 3) != 3) {
-    //     printf("==> %5lx: %-8.4x\n", pc, (uint16_t)d.inst);
-    // } else {
-    //     printf("==> %5lx: %.8x\n", pc, d.inst);
-    // }
     d.asm_str = inst_map[pc];
-
-    // increase pc
-    pc += (d.inst & 3) != 3 ? 2 : 4;
 
     // predict pc
     d.predPC = f.predPC = br_pred->predict(pc, d.inst);
@@ -77,8 +68,43 @@ void Simulator::ID()
     } else {
         parse_32b_inst(D, e);
     }
+
     e.val1 = reg[e.rs1];
     e.val2 = reg[e.rs2];
+    if (data_forwarding && e.rs1 != 0) {
+        if (E.rd == e.rs1) {
+            switch (E.opcode) {
+            case OP_JALR:
+            case OP_JAL:
+            case OP_BRANCH:
+                e.val1 = m.val2;
+                break;
+            default:
+                e.val1 = m.valE;
+            }
+        } else if (M.rd == e.rs1) {
+            e.val1 = w.val;
+        } else if (W.rd == e.rs1) {
+            e.val1 = W.val;
+        }
+    }
+    if (data_forwarding && e.rs2 != 0) {
+        if (E.rd == e.rs2) {
+            switch (E.opcode) {
+            case OP_JALR:
+            case OP_JAL:
+            case OP_BRANCH:
+                e.val2 = m.val2;
+                break;
+            default:
+                e.val2 = m.valE;
+            }
+        } else if (M.rd == e.rs2) {
+            e.val2 = w.val;
+        } else if (W.rd == e.rs2) {
+            e.val2 = W.val;
+        }
+    }
 }
 
 void Simulator::EX()
@@ -106,6 +132,7 @@ void Simulator::EX()
     reg_t valA, valB;
     switch (E.opcode) {
     case OP_RR:  // R-TYPE, Integer Register-Register Operations
+    case OP_RRW:
         valA = E.val1;
         valB = E.val2;
         break;
@@ -125,9 +152,13 @@ void Simulator::EX()
     case ALU_ADD: m.valE = valA + valB; break;
     case ALU_SUB: m.valE = valA - valB; break;
     case ALU_MUL: m.valE = valA * valB; break;
-    case ALU_MULH: m.valE = ((__uint128_t)valA * valB) >> 64; break;
-    case ALU_DIV: m.valE = valA / valB; break;
-    case ALU_REM: m.valE = valA % valB; break;
+    case ALU_MULH: m.valE = ((__int128_t)valA * (__int128_t)valB) >> 64; break;
+    case ALU_MULHSU: m.valE = ((__int128_t)valA * (__uint128_t)valB) >> 64; break;
+    case ALU_MULHU: m.valE = ((__uint128_t)valA * (__uint128_t)valB) >> 64; break;
+    case ALU_DIV: m.valE = (int64_t)valA / (int64_t)valB; break;
+    case ALU_DIVU: m.valE = valA / valB; break;
+    case ALU_REM: m.valE = (int64_t)valA % (int64_t)valB; break;
+    case ALU_REMU: m.valE = valA % valB; break;
     case ALU_SLL: m.valE = valA << valB; break;
     case ALU_SRA: m.valE = (int64_t)valA >> valB; break;
     case ALU_SRL: m.valE = valA >> valB; break;
@@ -191,7 +222,7 @@ void Simulator::WB()
         reg[W.rd] = W.val;
 }
 
-void Simulator::run()
+void Simulator::run_prog()
 {
     memset(reg, 0, sizeof(reg));
     F = {};
@@ -200,14 +231,17 @@ void Simulator::run()
     M = {};
     W = {};
     D.bubble = E.bubble = M.bubble = W.bubble = true;
+    stepping = single_step;
 
+    mem_sys = MemorySystem();
     elf_reader.load_elf(F.predPC, mem_sys);
     // initialize stack pointer
-    reg[2] = 0xFFFFFFFFFFF0;
-    mem_sys.page_alloc(reg[2]);
+    reg[REG_SP] = 0xFFFFFFFFFFF0;
+    mem_sys.page_alloc(reg[REG_SP]);
 
-    int tick = 0;
-    while (tick < 3000) {
+    running = true;
+    tick = 0;
+    while (true) {
         f = {};
         d = {};
         e = {};
@@ -215,44 +249,35 @@ void Simulator::run()
         w = {};
 
         try {
-            // printf("IF.."); fflush(stdout);
-            IF();
-            // printf("ID.."); fflush(stdout);
-            ID();
-            // printf("EX.."); fflush(stdout);
-            EX();
-            // printf("MEM.."); fflush(stdout);
-            MEM();
             // printf("WB.."); fflush(stdout);
             WB();
+            // printf("MEM.."); fflush(stdout);
+            MEM();
+            // printf("EX.."); fflush(stdout);
+            EX();
+            // printf("ID.."); fflush(stdout);
+            ID();
+            // printf("IF.."); fflush(stdout);
+            IF();
         } catch (runtime_error err) {
             printf("runtime_error: %s\n", err.what());
+            print_pipeline();
+            print_regs();
             break;
         }
 
-        printf("\ntick = %d\n", tick);
-        // printf("    IF: %s\n", inst_map[F.predPC].c_str());
-        printf("    IF: "); d.print_inst();
-        F.print();
-        printf("    ID: "); D.print_inst();
-        D.print();
-        printf("    EX: "); E.print_inst();
-        E.print();
-        printf("    MM: "); M.print_inst();
-        M.print();
-        printf("    WB: "); W.print_inst();
-        W.print();
-
-        printf("    Registers:");
-        for (int i = 0; i < 32; i++) {
-            if (i % 8 == 0)
-                printf("\n    ");
-            printf("%4s=%-6lx", reg_abi_name[i], reg[i]);
+        if (!single_step && verbose) {
+            print_pipeline();
+            print_regs();
         }
-        printf("\n\n");
 
-        // TODO: add control logic
+        if (single_step && check_breakpoint(E.valP)) {
+            print_pipeline();
+            if (process_command() == 1)
+                break;
+        }
 
+        // control logic: stall and bubble
         bool mispredicted =
             (((E.opcode == OP_BRANCH && m.cond) || E.opcode == OP_JALR || E.opcode == OP_JAL)
                 && E.predPC != m.valE)
@@ -261,13 +286,17 @@ void Simulator::run()
         d.bubble |= mispredicted;
         e.bubble |= mispredicted;
 
-        if (!data_forwarding) {
-            bool data_dep = (e.rs1 != 0 && (E.rd == e.rs1 || M.rd == e.rs1 || W.rd == e.rs1))
-                        || (e.rs2 != 0 && (E.rd == e.rs2 || M.rd == e.rs2 || W.rd == e.rs2));
-            F.stall |= data_dep;
-            D.stall |= data_dep;
-            e.bubble |= data_dep;
+        bool data_dependant;
+        if (data_forwarding) {
+            data_dependant = (e.rs1 != 0 && e.rs1 == E.rd && E.opcode == OP_LOAD) ||
+                             (e.rs2 != 0 && e.rs2 == E.rd && E.opcode == OP_LOAD);
+        } else {
+            data_dependant = (e.rs1 != 0 && (E.rd == e.rs1 || M.rd == e.rs1 || W.rd == e.rs1)) ||
+                             (e.rs2 != 0 && (E.rd == e.rs2 || M.rd == e.rs2 || W.rd == e.rs2));
         }
+        F.stall |= data_dependant;
+        D.stall |= data_dependant;
+        e.bubble |= data_dependant;
 
         e.bubble |= D.bubble;
         m.bubble |= E.bubble;
@@ -280,11 +309,209 @@ void Simulator::run()
         M.update(m);
         W.update(w);
     }
+    running = false;
+    printf("program exited\n");
+}
 
-    for (int i = 0; i < 10; i++) {
-        uintptr_t va = 0x11528 + i * 4;
-        reg_t value;
-        mem_sys.read_data(va, value);
-        printf("   value=%x\n", (uint32_t)value);
+void Simulator::print_regs()
+{
+    printf("    Registers:");
+    for (int i = 0; i < REG_NUM; i++) {
+        if (i % 8 == 0)
+            printf("\n    ");
+        printf("%4s=%-6lx", reg_abi_name[i], reg[i]);
+    }
+    printf("\n\n");
+}
+
+void Simulator::print_pipeline()
+{
+    printf("\ntick = %lu\n", tick);
+    // printf("    IF: %s\n", inst_map[F.predPC].c_str());
+    printf("    IF: "); d.print_inst();  // `d` has the correct instruction
+    F.print();
+    printf("    ID: "); D.print_inst();
+    D.print();
+    printf("    EX: "); E.print_inst();
+    E.print();
+    printf("    MM: "); M.print_inst();
+    M.print();
+    printf("    WB: "); W.print_inst();
+    W.print();
+}
+
+inline bool Simulator::check_breakpoint(reg_t pc)
+{
+    if (stepping) {
+        stepping = false;
+        return true;
+    }
+    return breakpoints.count(pc) > 0;
+}
+
+int Simulator::process_command()
+{
+    static string cmd, arg;
+    while (true) {
+        printf("(sim) "); fflush(stdout);
+        string line;
+        getline(cin, line);
+        if (line != "") {
+            size_t space = line.find_first_of(' ');
+            if (space < line.size() - 1)
+                arg = line.substr(space + 1);
+            else
+                arg = "";
+            cmd = line.substr(0, space);
+        }
+        if (cmd == "q" || cmd == "quit") {
+            exit(EXIT_SUCCESS);
+        }
+        if (cmd == "r" || cmd == "run") {
+            if (running) {
+                printf("error: the program is already running\n");
+                continue;
+            }
+            return 2;
+        }
+        if (cmd == "c" || cmd == "continue") {
+            stepping = false;
+            break;
+        }
+        if (cmd == "b" || cmd == "break") {
+            if (arg == "") {
+                printf("error: no address/symbol provided\n");
+                continue;
+            }
+            long long addr;
+            try {
+                addr = stoll(arg, nullptr, 0);
+            } catch (invalid_argument) {
+                try {
+                    addr = elf_reader.symtab.at(arg).st_value;
+                } catch (out_of_range err) {
+                    printf("error: cannot find symbol %s\n", arg.c_str());
+                    continue;
+                }
+            }
+            breakpoints.insert(addr);
+            printf("add breakpoint at 0x%llx\n", addr);
+            continue;
+        }
+        if (cmd == "p" || cmd == "print") {
+            if (arg == "") {
+                printf("error: no register provided\n");
+                continue;
+            }
+            if (arg[0] == '$') {
+                string reg_name = arg.substr(1);
+                if (reg_name == "") {
+                    print_regs();
+                    continue;
+                }
+                int index = 0;
+                for (; index < 32 && reg_abi_name[index] != reg_name; index++);
+                if (index == 32) {
+                    printf("error: no register has name `%s`", reg_name.c_str());
+                    continue;
+                }
+                printf("%s=0x%lx(%ld)\n", reg_name.c_str(), reg[index], reg[index]);
+                continue;
+            }
+            printf("error: unsupported expression\n");
+            continue;
+        }
+        if (cmd.size() >= 2 && cmd[0] == 'x' && cmd[1] == '/') {
+            if (arg == "") {
+                printf("error: no address/symbol provided\n");
+                continue;
+            }
+            size_t size = 0;
+            long long addr;
+            try {
+                addr = stoll(arg, nullptr, 0);
+            } catch (invalid_argument) {
+                try {
+                    const auto& symbol = elf_reader.symtab.at(arg);
+                    addr = symbol.st_value;
+                    size = symbol.st_size;
+                } catch (out_of_range err) {
+                    printf("error: cannot find symbol %s\n", arg.c_str());
+                    continue;
+                }
+            }
+            string format = cmd.substr(2);
+            size_t length, nxt = 0;
+            try {
+                length = stoll(format, &nxt);
+                format = format.substr(nxt);
+            } catch (invalid_argument) {}
+            char fm = 'd', sz = 'g';
+            size_t step_size = 8;
+            for (char c: format) {
+                switch (c) {
+                case 'x':
+                case 'd':
+                case 'u':
+                case 'f':
+                case 'c':
+                case 's':
+                    fm = c;
+                    break;
+                case 'b':
+                    step_size >>= 1;
+                case 'h':
+                    step_size >>= 1;
+                case 'w':
+                    step_size >>= 1;
+                case 'g':
+                    sz = c;
+                    break;
+                }
+            }
+            if (nxt == 0)
+                length = max(1UL, size / step_size);
+            mem_sys.output_memory(addr, fm, sz, length);
+            continue;
+        }
+        // commands below require the program to be running
+        if (cmd == "k" || cmd == "kill") {
+            if (!running) {
+                printf("error: program is not running\n");
+                continue;
+            }
+            return 1;
+        }
+        if (cmd == "s" || cmd == "step") {
+            if (!running) {
+                printf("error: program is not running\n");
+                continue;
+            }
+            stepping = true;
+            break;
+        }
+        if (cmd == "n" || cmd == "next") {
+            if (!running) {
+                printf("error: program is not running\n");
+                continue;
+            }
+            stepping = true;
+            break;
+        }
+        printf("error: unknown command\n");
+    }
+    return 0;
+}
+
+void Simulator::start()
+{
+    if (!single_step) {
+        run_prog();
+        return;
+    }
+    running = false;
+    while (true) {
+        if (process_command() == 2)
+            run_prog();
     }
 }

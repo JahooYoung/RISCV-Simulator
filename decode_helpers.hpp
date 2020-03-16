@@ -92,10 +92,14 @@ static const map<uint8_t, map<uint8_t, ALU_OP>> R_alu_op_map = {
     }},
     {0x1, {
         {0x00, ALU_SLL},
-        {0x01, ALU_MUL},
+        {0x01, ALU_MULH},
     }},
     {0x2, {
         {0x00, ALU_SLT},
+        {0x01, ALU_MULHSU},
+    }},
+    {0X3, {
+        {0X01, ALU_MULHU},
     }},
     {0x4, {
         {0x00, ALU_XOR},
@@ -103,6 +107,7 @@ static const map<uint8_t, map<uint8_t, ALU_OP>> R_alu_op_map = {
     }},
     {0x5, {
         {0x00, ALU_SRL},
+        {0x01, ALU_DIVU},
         {0x20, ALU_SRA},
     }},
     {0x6, {
@@ -111,6 +116,7 @@ static const map<uint8_t, map<uint8_t, ALU_OP>> R_alu_op_map = {
     }},
     {0x7, {
         {0x00, ALU_AND},
+        {0X01, ALU_REMU},
     }},
 };
 
@@ -159,7 +165,7 @@ inline void parse_16b_inst(const IDReg& D, EXReg& e)
         case 0x0:  // addi4spn => addi rd', x2, nzuimm[9:2]
             e.opcode = OP_RI;
             e.rd = 8 | getbits(D.inst, 2, 3);
-            e.rs1 = 2;
+            e.rs1 = REG_SP;
             e.imm = getbits(D.inst, 5, 1, 3) | getbits(D.inst, 6, 1, 2) |
                     getbits(D.inst, 7, 4, 6) | getbits(D.inst, 11, 2, 4);
             break;
@@ -224,7 +230,7 @@ inline void parse_16b_inst(const IDReg& D, EXReg& e)
             if (e.rd == 2) {
                 // addi16sp => addi x2, x2, nzimm[9:4]
                 e.opcode = OP_RI;
-                e.rs1 = 2;
+                e.rs1 = REG_SP;
                 e.imm = getbits(D.inst, 2, 1, 5) | getbits(D.inst, 3, 2, 7) |
                         getbits(D.inst, 5, 1, 6) | getbits(D.inst, 6, 1, 4) |
                         getbits(D.inst, 12, 1, 9);
@@ -310,7 +316,7 @@ inline void parse_16b_inst(const IDReg& D, EXReg& e)
             e.imm = getbits(D.inst, 12, 1, 5) | getbits(D.inst, 2, 2, 6) |
                     getbits(D.inst, 4, 3, 2);
             e.rd = getbits(D.inst, 7, 5);
-            e.rs1 = 2;
+            e.rs1 = REG_SP;
             break;
         case 0x3:  // ldsp => ld rd, offset[8:3](x2)
             e.opcode = OP_LOAD;
@@ -318,7 +324,7 @@ inline void parse_16b_inst(const IDReg& D, EXReg& e)
             e.imm = getbits(D.inst, 12, 1, 5) | getbits(D.inst, 2, 3, 6) |
                     getbits(D.inst, 5, 2, 3);
             e.rd = getbits(D.inst, 7, 5);
-            e.rs1 = 2;
+            e.rs1 = REG_SP;
             break;
         case 0x4:  // jr, jalr, mv, add
             e.rs1 = getbits(D.inst, 7, 5);
@@ -341,7 +347,7 @@ inline void parse_16b_inst(const IDReg& D, EXReg& e)
                 } else if (e.rs2 == 0) {
                     // jalr => jalr x1, rs1, 0
                     e.opcode = OP_JALR;
-                    e.rd = 1;
+                    e.rd = REG_RA;
                 } else {
                     // add => add rd, rd, rs2
                     e.opcode = OP_RR;
@@ -353,14 +359,14 @@ inline void parse_16b_inst(const IDReg& D, EXReg& e)
             e.opcode = 0x23;
             e.funct3 = 0x2;
             e.imm = getbits(D.inst, 7, 2, 6) | getbits(D.inst, 9, 4, 2);
-            e.rs1 = 2;
+            e.rs1 = REG_SP;
             e.rs2 = getbits(D.inst, 2, 5);
             break;
         case 0x7:  // sdsp => sd rs2, offset[8:3](x2)
             e.opcode = 0x23;
             e.funct3 = 0x3;
             e.imm = getbits(D.inst, 7, 3, 6) | getbits(D.inst, 10, 3, 3);
-            e.rs1 = 2;
+            e.rs1 = REG_SP;
             e.rs2 = getbits(D.inst, 2, 5);
             break;
         default:

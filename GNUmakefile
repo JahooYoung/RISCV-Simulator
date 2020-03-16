@@ -5,6 +5,7 @@ PREFIX := build
 TARGET := simulator
 
 RISCV_CC := riscv64-unknown-elf-gcc
+RISCV_OBJDUMP := riscv64-unknown-elf-objdump
 SAMPLE_PREFIX := samples
 
 SRCS := $(wildcard *.cpp)
@@ -30,16 +31,20 @@ $(PREFIX)/.deps: $(wildcard $(PREFIX)/*.d)
 clean:
 	rm -rf $(PREFIX)
 
-.PRECIOUS: $(SAMPLE_PREFIX)/%
+.PRECIOUS: $(SAMPLE_PREFIX)/% $(SAMPLE_PREFIX)/%.S
 
 run-%-info: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
 	$(PREFIX)/$(TARGET) -i $<-info.txt $<
 
 run-%: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
-	$(PREFIX)/$(TARGET) $< > samples/output.txt
+	$(PREFIX)/$(TARGET) -v $< > samples/output.txt
+
+srun-%: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
+	$(PREFIX)/$(TARGET) -s $<
 
 sample-%: $(SAMPLE_PREFIX)/%
 	@:
 
 $(SAMPLE_PREFIX)/%: $(SAMPLE_PREFIX)/%.c
-	$(RISCV_CC) -Wa,-march=rv64i -o $(SAMPLE_PREFIX)/$* $<
+	$(RISCV_CC) -Wa,-march=rv64imc -o $(SAMPLE_PREFIX)/$* $<
+	$(RISCV_OBJDUMP) -d $(SAMPLE_PREFIX)/$* > $(SAMPLE_PREFIX)/$*.S

@@ -33,8 +33,7 @@ int main(int argc, char **argv)
     string elf_filename;
 
     while ((opt =
-        getopt_long(argc, argv, "si:c:", long_options, &option_index)) != -1) {
-
+        getopt_long(argc, argv, "svi:c:", long_options, &option_index)) != -1) {
         switch (opt) {
         case 'c':
             config_filename = optarg;
@@ -44,6 +43,9 @@ int main(int argc, char **argv)
             break;
         case 's':
             config_patch["single_step"] = true;
+            break;
+        case 'v':
+            config_patch["verbose"] = true;
             break;
         default:
             print_help(argv[0]);
@@ -66,7 +68,7 @@ int main(int argc, char **argv)
     config.merge_patch(config_patch);
 
     Simulator simulator(config);
-    simulator.run();
+    simulator.start();
 
 
     return 0;

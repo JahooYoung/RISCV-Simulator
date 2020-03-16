@@ -4,36 +4,33 @@
 #include <cstdio>
 #include <string>
 #include <map>
+#include <vector>
 #include "types.hpp"
 #include "memory_system.hpp"
 #include "elf.hpp"
 
 using InstructionMap = std::map<uintptr_t, std::string>;
 
+using SymbolTable = std::map<std::string, Elf64_Sym>;
+
 class ElfReader
 {
 private:
     std::string elf_filename;
     FILE *elf_file;
-    FILE *info_file;
 
     Elf64_Ehdr elf64_hdr;
-    int symtab_addr, symtab_size, symtab_num;
-    int strtab_offset, strtab_size;
+    std::vector<Elf64_Phdr> program_header;
+    std::vector<Elf64_Shdr> section_header;
+    char *shstr;
 
 public:
+    SymbolTable symtab;
+
     ElfReader(const std::string& elf_filename);
     ~ElfReader();
-
-    void read_elf_header();
-    void read_section_headers();
-    void read_program_headers();
-    void read_symtable();
     void output_elf_info(const std::string& info_filename);
-
-    void load_objdump(const std::string& objdump_path,
-        InstructionMap& inst_map);
-
+    void load_objdump(const std::string& objdump_path, InstructionMap& inst_map);
     void load_elf(reg_t& pc, MemorySystem& mem_sys);
 };
 

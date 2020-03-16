@@ -4,6 +4,9 @@
 #include <string>
 #include "types.hpp"
 
+#define REG_RA      1
+#define REG_SP      2
+
 #define OP_RR       0x33
 #define OP_RRW      0x3b
 #define OP_LOAD     0x03
@@ -23,8 +26,12 @@ enum ALU_OP
     ALU_SUB,
     ALU_MUL,
     ALU_MULH,
+    ALU_MULHSU,
+    ALU_MULHU,
     ALU_DIV,
+    ALU_DIVU,
     ALU_REM,
+    ALU_REMU,
     ALU_SLL,
     ALU_SRA,
     ALU_SRL,

@@ -32,6 +32,7 @@ public:
     int read_inst(reg_t ptr, inst_t& st);
     int read_data(reg_t ptr, reg_t& st);
     int write_data(reg_t ptr, reg_t st, int bytes);
+    void output_memory(uintptr_t va, char fm, char sz, size_t length);
 };
 
 #endif
