@@ -17,15 +17,17 @@ private:
     bool single_step;
     bool data_forwarding;
     bool verbose;
+    int stack_size;
 
     // elf file related
     ElfReader elf_reader;
     InstructionMap inst_map;
 
+    reg_t reg[REG_NUM];
     MemorySystem mem_sys;
     BranchPredictor *br_pred;
-    reg_t reg[REG_NUM];
     size_t tick;
+    size_t instruction_count;
 
     // uppercase refer to pipeline registers, lowercase refer to
     // the signal to be written to the corresponding registers
@@ -35,11 +37,14 @@ private:
     MEMReg M, m;
     WBReg W, w;
 
-    void IF();
-    void ID();
-    void EX();
-    void MEM();
-    void WB();
+    int IF();
+    int ID();
+    int EX();
+    int MEM();
+    int WB();
+
+    int process_syscall();
+    void run_prog();
 
     // debug related
     bool running;
@@ -54,7 +59,6 @@ private:
 public:
     Simulator(const nlohmann::json& config);
     ~Simulator();
-    void run_prog();
     void start();
 };
 

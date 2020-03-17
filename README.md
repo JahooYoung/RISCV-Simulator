@@ -15,9 +15,7 @@
 ### TODO
 
 - 多周期
-- 单步（类似gdb）
-- 查看内存，支持符号
-- 处理ecall
+- 浮点支持？
 
 ### 架构
 
@@ -34,4 +32,3 @@
   - Cache
   - backup memory
 - ElfReader
-

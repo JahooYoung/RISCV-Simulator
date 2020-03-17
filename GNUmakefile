@@ -2,22 +2,26 @@ CXX := g++
 CXXFLAGS := -Wall -O2 -std=c++17 -MD
 LFLAGS := -O2
 PREFIX := build
-TARGET := simulator
+TARGET := $(PREFIX)/simulator
 
 RISCV_CC := riscv64-unknown-elf-gcc
+RISCV_AR := riscv64-unknown-elf-ar
 RISCV_OBJDUMP := riscv64-unknown-elf-objdump
 SAMPLE_PREFIX := samples
+
+LIB_PREFIX := $(PREFIX)/lib
+LIB := $(LIB_PREFIX)/libtiny.a
 
 SRCS := $(wildcard *.cpp)
 OBJS := $(SRCS:.cpp=.o)
 OBJS := $(addprefix $(PREFIX)/, $(OBJS))
 
-$(shell mkdir -p $(PREFIX))
+$(shell mkdir -p $(LIB_PREFIX))
 
 .PHONY: all clean
-all: $(PREFIX)/$(TARGET)
+all: $(TARGET)
 
-$(PREFIX)/$(TARGET): $(OBJS)
+$(TARGET): $(OBJS)
 	$(CXX) $(LFLAGS) -o $@ $^
 
 $(PREFIX)/%.o: %.cpp
@@ -33,18 +37,36 @@ clean:
 
 .PRECIOUS: $(SAMPLE_PREFIX)/% $(SAMPLE_PREFIX)/%.S
 
-run-%-info: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
-	$(PREFIX)/$(TARGET) -i $<-info.txt $<
+run-%-info: $(SAMPLE_PREFIX)/% $(TARGET)
+	$(TARGET) -i $<-info.txt $<
 
-run-%: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
-	$(PREFIX)/$(TARGET) -v $< > samples/output.txt
+run-%: $(SAMPLE_PREFIX)/% $(TARGET)
+	$(TARGET) -v $< > samples/output.txt
 
-srun-%: $(SAMPLE_PREFIX)/% $(PREFIX)/$(TARGET)
-	$(PREFIX)/$(TARGET) -s $<
+srun-%: $(SAMPLE_PREFIX)/% $(TARGET)
+	$(TARGET) -s $<
 
 sample-%: $(SAMPLE_PREFIX)/%
 	@:
 
-$(SAMPLE_PREFIX)/%: $(SAMPLE_PREFIX)/%.c
-	$(RISCV_CC) -Wa,-march=rv64imc -o $(SAMPLE_PREFIX)/$* $<
-	$(RISCV_OBJDUMP) -d $(SAMPLE_PREFIX)/$* > $(SAMPLE_PREFIX)/$*.S
+$(SAMPLE_PREFIX)/%: $(SAMPLE_PREFIX)/%.c $(LIB)
+	$(RISCV_CC) -Iinclude -O2 -Wa,-march=rv64imc -static -o $(SAMPLE_PREFIX)/$* $< -L $(LIB_PREFIX) -ltiny
+	$(RISCV_OBJDUMP) -S $(SAMPLE_PREFIX)/$* > $(SAMPLE_PREFIX)/$*.S
+
+
+# library
+
+LIB_SRCS := $(wildcard lib/*.c)
+LIB_OBJS := $(LIB_SRCS:.c=.o)
+LIB_OBJS := $(addprefix $(PREFIX)/, $(LIB_OBJS))
+
+$(LIB): $(LIB_OBJS)
+	$(RISCV_AR) -crv $@ $^
+
+$(LIB_PREFIX)/%.o: lib/%.c
+	$(RISCV_CC) -O2 -MD -Iinclude -c -o $@ $<
+
+$(LIB_PREFIX)/.deps: $(wildcard $(LIB_PREFIX)/*.d)
+	@perl mergedep.pl $@ $^
+
+-include $(LIB_PREFIX)/.deps

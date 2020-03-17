@@ -1,23 +1,21 @@
 #include <cstring>
 #include <string>
 #include <iostream>
+#include <sstream>
+#include <syscall.h>
 #include "simulator.hpp"
 #include "decode_helpers.hpp"
 using namespace std;
 using nlohmann::json;
 
-const char *reg_abi_name[32] = {
-    "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
-    "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
-    "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
-    "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
-};
+class ExitEvent {};
 
 Simulator::Simulator(const json& config)
     : disasemble(config.value("disasemble", false)),
     single_step(config.value("single_step", false)),
     data_forwarding(config.value("data_forwarding", true)),
     verbose(config.value("verbose", false)),
+    stack_size(config.value("stack_size", 1024)),  // KB
     elf_reader(config["elf_file"].get<string>())
 {
     string info_file = config.value("info_file", "");
@@ -41,7 +39,7 @@ Simulator::~Simulator()
     delete br_pred;
 }
 
-void Simulator::IF()
+int Simulator::IF()
 {
     // select pc
     reg_t pc = F.predPC;
@@ -61,10 +59,10 @@ void Simulator::IF()
     d.predPC = f.predPC = br_pred->predict(pc, d.inst);
 }
 
-void Simulator::ID()
+int Simulator::ID()
 {
     if (D.bubble)
-        return;
+        return 0;
 
     e.asm_str = D.asm_str;
     e.valP = D.valP;
@@ -115,10 +113,10 @@ void Simulator::ID()
     }
 }
 
-void Simulator::EX()
+int Simulator::EX()
 {
     if (E.bubble)
-        return;
+        return 0;
 
     m.asm_str = E.asm_str;
     m.opcode = E.opcode;
@@ -173,7 +171,8 @@ void Simulator::EX()
     case ALU_XOR: m.valE = valA ^ valB; break;
     case ALU_OR: m.valE = valA | valB; break;
     case ALU_AND: m.valE = valA & valB; break;
-    case ALU_SLT: m.valE = valA < valB; break;
+    case ALU_SLT: m.valE = (int64_t)valA < (int64_t)valB; break;
+    case ALU_SLTU: m.valE = valA < valB; break;
     }
 
     // truncate for addw, subw, ...
@@ -193,20 +192,31 @@ void Simulator::EX()
     }
 }
 
-void Simulator::MEM()
+int Simulator::MEM()
 {
     if (M.bubble)
-        return;
+        return 0;
 
     w.asm_str = M.asm_str;
+    w.opcode = M.opcode;
     w.rd = M.rd;
 
     int remains = 0;
     switch (M.opcode) {
     case OP_LOAD:
         remains = mem_sys.read_data(M.valE, w.val);
-        if (M.funct3 < 3)
+        switch (M.funct3) {
+        case 0:
+        case 1:
+        case 2:
             w.val = sign_extend(w.val, 8 << M.funct3);
+            break;
+        case 4:  // lbu
+        case 5:  // lhu
+        case 6:  // lwu
+            w.val = zero_extend(w.val, 8 << (M.funct3 - 4));
+            break;
+        }
         break;
     case OP_STORE:
         remains = mem_sys.write_data(M.valE, M.val2, 1 << M.funct3);
@@ -221,10 +231,10 @@ void Simulator::MEM()
     }
 }
 
-void Simulator::WB()
+int Simulator::WB()
 {
     if (W.bubble)
-        return;
+        return 0;
 
     if (W.rd != 0)
         reg[W.rd] = W.val;
@@ -239,16 +249,19 @@ void Simulator::run_prog()
     M = {};
     W = {};
     D.bubble = E.bubble = M.bubble = W.bubble = true;
-    stepping = single_step;
+    stepping = false;
 
     mem_sys = MemorySystem();
     elf_reader.load_elf(F.predPC, mem_sys);
-    // initialize stack pointer
+
+    // initialize stack
     reg[REG_SP] = 0xFFFFFFFFFFF0;
-    mem_sys.page_alloc(reg[REG_SP]);
+    for (int i = 0; i < ((stack_size + 3) / 4); i++)
+        mem_sys.page_alloc(reg[REG_SP] - PGSIZE * i);
 
     running = true;
     tick = 0;
+    instruction_count = 0;
     while (true) {
         f = {};
         d = {};
@@ -267,7 +280,17 @@ void Simulator::run_prog()
             ID();
             // printf("IF.."); fflush(stdout);
             IF();
+            if (W.opcode == OP_ECALL) {
+                process_syscall();
+            }
+        } catch (ExitEvent) {
+            printf("======== above are user output ========\n");
+            printf("program exited normally\n");
+            printf("    ticks: %lu\n", tick);
+            printf("    instructions: %lu\n", instruction_count);
+            break;
         } catch (runtime_error err) {
+            printf("======== above are user output ========\n");
             printf("runtime_error: %s\n", err.what());
             print_pipeline();
             print_regs();
@@ -286,6 +309,7 @@ void Simulator::run_prog()
         }
 
         // control logic: stall and bubble
+        bool meet_ecall = (E.opcode == OP_ECALL || M.opcode == OP_ECALL || W.opcode == OP_ECALL);
         bool mispredicted =
             (((E.opcode == OP_BRANCH && m.cond) || E.opcode == OP_JALR || E.opcode == OP_JAL)
                 && E.predPC != m.valE)
@@ -302,13 +326,16 @@ void Simulator::run_prog()
             data_dependant = (e.rs1 != 0 && (E.rd == e.rs1 || M.rd == e.rs1 || W.rd == e.rs1)) ||
                              (e.rs2 != 0 && (E.rd == e.rs2 || M.rd == e.rs2 || W.rd == e.rs2));
         }
-        F.stall |= data_dependant;
-        D.stall |= data_dependant;
-        e.bubble |= data_dependant;
+        F.stall |= data_dependant | meet_ecall;
+        D.stall |= data_dependant | meet_ecall;
+        e.bubble |= data_dependant | meet_ecall;
 
         e.bubble |= D.bubble;
         m.bubble |= E.bubble;
         w.bubble |= M.bubble;
+
+        if (!W.stall && !W.bubble)
+            instruction_count++;
 
         tick++;
         F.update(f);
@@ -318,195 +345,35 @@ void Simulator::run_prog()
         W.update(w);
     }
     running = false;
-    printf("program exited\n");
 }
 
-void Simulator::print_regs()
+int Simulator::process_syscall()
 {
-    printf("    Registers:");
-    for (int i = 0; i < REG_NUM; i++) {
-        if (i % 8 == 0)
-            printf("\n    ");
-        printf("%4s=%-6lx", reg_abi_name[i], reg[i]);
+    static stringstream line;
+    reg_t a1 = reg[REG_A1], a2 = reg[REG_A2];
+    switch (reg[REG_A7]) {
+    case SYS_exit:
+        throw ExitEvent();
+    case SYS_cputchar:
+        printf("%c", (char)a1);
+        break;
+    case SYS_sbrk:
+        reg[REG_A0] = mem_sys.sbrk((size_t)a1);
+        break;
+    case SYS_readint: {
+        int tmp;
+        if (!(line >> tmp)) {
+            line.clear();
+            string buf;
+            getline(cin, buf);
+            line << buf;
+            line >> tmp;
+        }
+        reg[REG_A0] = tmp;
+        break;
     }
-    printf("\n\n");
-}
-
-void Simulator::print_pipeline()
-{
-    printf("\ntick = %lu\n", tick);
-    // printf("    IF: %s\n", inst_map[F.predPC].c_str());
-    printf("    IF: "); d.print_inst();  // `d` has the correct instruction
-    F.print();
-    printf("    ID: "); D.print_inst();
-    D.print();
-    printf("    EX: "); E.print_inst();
-    E.print();
-    printf("    MM: "); M.print_inst();
-    M.print();
-    printf("    WB: "); W.print_inst();
-    W.print();
-}
-
-inline bool Simulator::check_breakpoint(reg_t pc)
-{
-    if (stepping) {
-        stepping = false;
-        return true;
-    }
-    return breakpoints.count(pc) > 0;
-}
-
-int Simulator::process_command()
-{
-    static string cmd, arg;
-    while (true) {
-        printf("(sim) "); fflush(stdout);
-        string line;
-        getline(cin, line);
-        if (line != "") {
-            size_t space = line.find_first_of(' ');
-            if (space < line.size() - 1)
-                arg = line.substr(space + 1);
-            else
-                arg = "";
-            cmd = line.substr(0, space);
-        }
-        if (cmd == "q" || cmd == "quit") {
-            exit(EXIT_SUCCESS);
-        }
-        if (cmd == "r" || cmd == "run") {
-            if (running) {
-                printf("error: the program is already running\n");
-                continue;
-            }
-            return 2;
-        }
-        if (cmd == "c" || cmd == "continue") {
-            stepping = false;
-            break;
-        }
-        if (cmd == "b" || cmd == "break") {
-            if (arg == "") {
-                printf("error: no address/symbol provided\n");
-                continue;
-            }
-            long long addr;
-            try {
-                addr = stoll(arg, nullptr, 0);
-            } catch (invalid_argument) {
-                try {
-                    addr = elf_reader.symtab.at(arg).st_value;
-                } catch (out_of_range err) {
-                    printf("error: cannot find symbol %s\n", arg.c_str());
-                    continue;
-                }
-            }
-            breakpoints.insert(addr);
-            printf("add breakpoint at 0x%llx\n", addr);
-            continue;
-        }
-        if (cmd == "p" || cmd == "print") {
-            if (arg == "") {
-                printf("error: no register provided\n");
-                continue;
-            }
-            if (arg[0] == '$') {
-                string reg_name = arg.substr(1);
-                if (reg_name == "") {
-                    print_regs();
-                    continue;
-                }
-                int index = 0;
-                for (; index < 32 && reg_abi_name[index] != reg_name; index++);
-                if (index == 32) {
-                    printf("error: no register has name `%s`", reg_name.c_str());
-                    continue;
-                }
-                printf("%s=0x%lx(%ld)\n", reg_name.c_str(), reg[index], reg[index]);
-                continue;
-            }
-            printf("error: unsupported expression\n");
-            continue;
-        }
-        if (cmd.size() >= 2 && cmd[0] == 'x' && cmd[1] == '/') {
-            if (arg == "") {
-                printf("error: no address/symbol provided\n");
-                continue;
-            }
-            size_t size = 0;
-            long long addr;
-            try {
-                addr = stoll(arg, nullptr, 0);
-            } catch (invalid_argument) {
-                try {
-                    const auto& symbol = elf_reader.symtab.at(arg);
-                    addr = symbol.st_value;
-                    size = symbol.st_size;
-                } catch (out_of_range err) {
-                    printf("error: cannot find symbol %s\n", arg.c_str());
-                    continue;
-                }
-            }
-            string format = cmd.substr(2);
-            size_t length, nxt = 0;
-            try {
-                length = stoll(format, &nxt);
-                format = format.substr(nxt);
-            } catch (invalid_argument) {}
-            char fm = 'd', sz = 'g';
-            size_t step_size = 8;
-            for (char c: format) {
-                switch (c) {
-                case 'x':
-                case 'd':
-                case 'u':
-                case 'f':
-                case 'c':
-                case 's':
-                    fm = c;
-                    break;
-                case 'b':
-                    step_size >>= 1;
-                case 'h':
-                    step_size >>= 1;
-                case 'w':
-                    step_size >>= 1;
-                case 'g':
-                    sz = c;
-                    break;
-                }
-            }
-            if (nxt == 0)
-                length = max(1UL, size / step_size);
-            mem_sys.output_memory(addr, fm, sz, length);
-            continue;
-        }
-        // commands below require the program to be running
-        if (cmd == "k" || cmd == "kill") {
-            if (!running) {
-                printf("error: program is not running\n");
-                continue;
-            }
-            return 1;
-        }
-        if (cmd == "s" || cmd == "step") {
-            if (!running) {
-                printf("error: program is not running\n");
-                continue;
-            }
-            stepping = true;
-            break;
-        }
-        if (cmd == "n" || cmd == "next") {
-            if (!running) {
-                printf("error: program is not running\n");
-                continue;
-            }
-            stepping = true;
-            break;
-        }
-        printf("error: unknown command\n");
+    default:
+        throw_error("unsupported syscall number %d", reg[REG_A7]);
     }
     return 0;
 }

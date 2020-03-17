@@ -6,6 +6,14 @@
 
 #define REG_RA      1
 #define REG_SP      2
+#define REG_A0      10
+#define REG_A1      11
+#define REG_A2      12
+#define REG_A3      13
+#define REG_A4      14
+#define REG_A5      15
+#define REG_A6      16
+#define REG_A7      17
 
 #define OP_RR       0x33
 #define OP_RRW      0x3b
@@ -38,7 +46,8 @@ enum ALU_OP
     ALU_XOR,
     ALU_OR,
     ALU_AND,
-    ALU_SLT
+    ALU_SLT,
+    ALU_SLTU,
 };
 
 struct PipeReg
@@ -95,6 +104,7 @@ struct MEMReg : public PipeReg
 
 struct WBReg : public PipeReg
 {
+    uint8_t opcode;
     reg_t val;
     uint8_t rd;
 

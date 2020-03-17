@@ -52,6 +52,11 @@
         "streambuf": "cpp",
         "random": "cpp",
         "typeinfo": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "types.h": "c",
+        "stdio.h": "c",
+        "stdint.h": "c",
+        "syscall.h": "c",
+        "stddef.h": "c"
     }
 }

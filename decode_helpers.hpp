@@ -13,6 +13,11 @@ inline reg_t sign_extend(reg_t reg, int bits)
     return reg;
 }
 
+inline reg_t zero_extend(reg_t reg, int bits)
+{
+    return reg & (-1ULL >> (64 - bits));
+}
+
 inline uint32_t getbits(inst_t inst, int start, int count, int shamt = 0)
 {
     return ((inst >> start) & ((1 << count) - 1)) << shamt;
@@ -99,6 +104,7 @@ static const map<uint8_t, map<uint8_t, ALU_OP>> R_alu_op_map = {
         {0x01, ALU_MULHSU},
     }},
     {0X3, {
+        {0x00, ALU_SLTU},
         {0X01, ALU_MULHU},
     }},
     {0x4, {
@@ -130,12 +136,15 @@ static const map<uint8_t, map<uint8_t, ALU_OP>> I_alu_op_map = {
     {0x2, {
         {0x00, ALU_SLT},
     }},
+    {0x3, {
+        {0x00, ALU_SLTU},
+    }},
     {0x4, {
         {0x00, ALU_XOR},
     }},
     {0x5, {
         {0x00, ALU_SRL},
-        {0x20, ALU_SRA},
+        {0x10, ALU_SRA},
     }},
     {0x6, {
         {0x00, ALU_OR},
@@ -342,8 +351,9 @@ inline void parse_16b_inst(inst_t inst, EXReg& e)
                 break;
             case 1:
                 if (e.rs1 == 0 && e.rs2 == 0) {
-                    // ebreak
-                    throw_error("ebreak is not supported");
+                    // ! ebreak
+                    // ! I have to accept ebreak since it appear in my malloc
+                    // throw_error("ebreak is not supported");
                 } else if (e.rs2 == 0) {
                     // jalr => jalr x1, rs1, 0
                     e.opcode = OP_JALR;
@@ -377,7 +387,7 @@ inline void parse_16b_inst(inst_t inst, EXReg& e)
 
 inline void parse_32b_inst(inst_t inst, EXReg& e)
 {
-    static char msg_template[] = "unknown instruction: opcode 0x%02x funct3 0x%02x funct7 0x%02x";
+    static char msg_template[] = "unknown instruction: %08x (opcode 0x%02x funct3 0x%02x funct7 0x%02x)";
     e.opcode = (uint8_t)getbits(inst, 0, 7);
     uint8_t funct7 = 0;
     switch (e.opcode) {
@@ -386,7 +396,7 @@ inline void parse_32b_inst(inst_t inst, EXReg& e)
         try {
             e.alu_op = R_alu_op_map.at(e.funct3).at(funct7);
         } catch (out_of_range err) {
-            throw_error(msg_template, e.opcode, e.funct3, funct7);
+            throw_error(msg_template, inst, e.opcode, e.funct3, funct7);
         }
         break;
     case OP_RRW:  // R-TYPE, Integer Register-Register Operations
@@ -394,7 +404,7 @@ inline void parse_32b_inst(inst_t inst, EXReg& e)
         try {
             e.alu_op = R_alu_op_map.at(e.funct3).at(funct7);
         } catch (out_of_range err) {
-            throw_error(msg_template, e.opcode, e.funct3, funct7);
+            throw_error(msg_template, inst, e.opcode, e.funct3, funct7);
         }
         break;
     case OP_LOAD:  // I-TYPE, Load Instructions
@@ -403,40 +413,40 @@ inline void parse_32b_inst(inst_t inst, EXReg& e)
         break;
     case OP_RI:  // I-TYPE, Integer Register-Immediate Instructions
         parse_I_Type(inst, e, funct7);
-        if (e.funct3 != 0x1 && e.funct3 != 0x5)
+        if (e.funct3 == 0x1 || e.funct3 == 0x5) {
+            funct7 >>= 1;
+            e.imm &= 0x3F;
+        } else {
             funct7 = 0;
+            e.imm = sign_extend(e.imm, 12);
+        }
         try {
             e.alu_op = I_alu_op_map.at(e.funct3).at(funct7);
         } catch (out_of_range err) {
-            throw_error(msg_template, e.opcode, e.funct3, funct7);
+            throw_error(msg_template, inst, e.opcode, e.funct3, funct7);
         }
-        if (e.funct3 == 0x1 || e.funct3 == 0x5)
-            e.imm &= 0x3F;
-        else
-            e.imm = sign_extend(e.imm, 12);
         break;
     case OP_RIW:  // I-TYPE, Integer Register-Immediate Instructions
         parse_I_Type(inst, e, funct7);
-        if (e.funct3 != 0x1 && e.funct3 != 0x5)
+        if (e.funct3 == 0x1 || e.funct3 == 0x5) {
+            funct7 >>= 1;
+            e.imm &= 0x1F;
+        } else {
             funct7 = 0;
+            e.imm = sign_extend(e.imm, 12);
+        }
         try {
             e.alu_op = I_alu_op_map.at(e.funct3).at(funct7);
         } catch (out_of_range err) {
-            throw_error(msg_template, e.opcode, e.funct3, funct7);
+            throw_error(msg_template, inst, e.opcode, e.funct3, funct7);
         }
-        if (e.funct3 == 0x1 || e.funct3 == 0x5)
-            e.imm &= 0x3F;
-        else
-            e.imm = sign_extend(e.imm, 12);
         break;
     case OP_JALR:  // I-TYPE, jalr
         parse_I_Type(inst, e, funct7);
         e.imm = sign_extend(e.imm, 12);
         break;
     case OP_ECALL:  // I-TYPE, ecall
-        parse_I_Type(inst, e, funct7);
-        // TODO
-        throw runtime_error("ecall encountered!");
+        // no processing needed
         break;
     case OP_STORE:  // S-TYPE, Store Instructions
         parse_S_Type(inst, e);
@@ -459,7 +469,7 @@ inline void parse_32b_inst(inst_t inst, EXReg& e)
         e.imm = sign_extend(e.imm, 21);
         break;
     default:
-        throw_error(msg_template, e.opcode, 0, 0);
+        throw_error(msg_template, inst, e.opcode, 0, 0);
     }
 }
 
