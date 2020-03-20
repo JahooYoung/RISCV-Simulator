@@ -41,6 +41,9 @@ run-%-info: $(SAMPLE_PREFIX)/% $(TARGET)
 	$(TARGET) -i $<-info.txt $<
 
 run-%: $(SAMPLE_PREFIX)/% $(TARGET)
+	$(TARGET) $<
+
+run-%-v: $(SAMPLE_PREFIX)/% $(TARGET)
 	$(TARGET) -v $< > samples/output.txt
 
 srun-%: $(SAMPLE_PREFIX)/% $(TARGET)

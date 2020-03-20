@@ -23,11 +23,14 @@ Simulator::Simulator(const json& config)
         elf_reader.output_elf_info(info_file);
     if (disasemble)
         elf_reader.load_objdump(config.value("objdump", "riscv64-unknown-elf-objdump"), inst_map);
-    string bpred_str = config.value("branch_prediction", "always_taken");
+
+    string bpred_str = config.value("branch_prediction", "btfnt");
     if (bpred_str == "never_taken")
         br_pred = new NeverTaken();
     else if (bpred_str == "always_taken")
         br_pred = new AlwaysTaken();
+    else if (bpred_str == "btfnt")
+        br_pred = new BTFNT();
     else {
         cerr << "error: no branch prediction strategy named " << bpred_str << endl;
         exit(EXIT_FAILURE);

@@ -23,3 +23,22 @@ reg_t AlwaysTaken::predict(reg_t pc, inst_t inst)
         return pc + ((inst & 3) != 3 ? 2 : 4);
     }
 }
+
+reg_t BTFNT::predict(reg_t pc, inst_t inst)
+{
+    EXReg e;
+    if ((inst & 3) != 3) {
+        parse_16b_inst(inst, e);
+    } else {
+        parse_32b_inst(inst, e);
+    }
+    switch (e.opcode) {
+    case OP_BRANCH:
+    case OP_JAL:
+        if ((int64_t)e.imm < 0)
+            return pc + e.imm;
+        /* fall through */
+    default:
+        return pc + ((inst & 3) != 3 ? 2 : 4);
+    }
+}

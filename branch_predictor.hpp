@@ -19,4 +19,10 @@ struct AlwaysTaken : public BranchPredictor
     reg_t predict(reg_t pc, inst_t inst);
 };
 
+// Backward taken, forward not taken
+struct BTFNT : public BranchPredictor
+{
+    reg_t predict(reg_t pc, inst_t inst);
+};
+
 #endif
