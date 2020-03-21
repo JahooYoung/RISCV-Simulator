@@ -31,11 +31,13 @@ public:
     ~MemorySystem();
     pte_t page_alloc(uintptr_t va);
     void load_segment(FILE *file, const Elf64_Phdr& phdr);
+    // return the number of cycles required
     int read_inst(reg_t ptr, inst_t& st);
-    int read_data(reg_t ptr, reg_t& st);
-    int write_data(reg_t ptr, reg_t st, int bytes);
+    int read_data(reg_t ptr, reg_t& reg, int bytes);
+    int write_data(reg_t ptr, reg_t reg, int bytes);
     uintptr_t sbrk(size_t size);
     void output_memory(uintptr_t va, char fm, char sz, size_t length);
+    void print_info();
 };
 
 #endif

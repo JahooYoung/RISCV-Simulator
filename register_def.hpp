@@ -48,6 +48,7 @@ enum ALU_OP
     ALU_AND,
     ALU_SLT,
     ALU_SLTU,
+    N_ALU_OP
 };
 
 struct PipeReg

@@ -1,4 +1,54 @@
 {
     "disasemble": true,
-    "data_forwarding": true
+    "data_forwarding": true,
+    "branch_prediction": "btfnt",
+    "stack_size": 1024,
+    "alu_cycles": {
+        "add_sub": 1,
+        "mul": 3,
+        "div_rem": 30,
+        "bit_op": 1,
+        "slt": 1
+    },
+    "ecall_cycles": {
+        "cputchar": 1000,
+        "sbrk": 1000,
+        "readint": 10000
+    },
+    "cache": [
+        {
+            "name": "L1_instruction_cache",
+            "instruction_entry": true,
+            "size": 48,
+            "ways": 12,
+            "hit_cycles": 3,
+            "cache_for": "L2_cache"
+        },
+        {
+            "name": "L1_data_cache",
+            "data_entry": true,
+            "size": 32,
+            "ways": 8,
+            "hit_cycles": 3,
+            "cache_for": "L2_cache"
+        },
+        {
+            "name": "L2_cache",
+            "size": 512,
+            "ways": 8,
+            "hit_cycles": 10,
+            "cache_for": "L3_cache"
+        },
+        {
+            "name": "L3_cache",
+            "size": 8192,
+            "ways": 16,
+            "hit_cycles": 40,
+            "cache_for": "memory"
+        }
+    ],
+    "memory_cycles": {
+        "read": 100,
+        "write": 100
+    }
 }

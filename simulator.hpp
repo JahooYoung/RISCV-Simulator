@@ -3,6 +3,7 @@
 
 #include <set>
 #include <nlohmann/json.hpp>
+#include <syscall.h>
 #include "register_def.hpp"
 #include "elf_reader.hpp"
 #include "branch_predictor.hpp"
@@ -18,6 +19,8 @@ private:
     bool data_forwarding;
     bool verbose;
     int stack_size;
+    int alu_cycles[N_ALU_OP];
+    int ecall_cycles[NSYSCALLS];
 
     // elf file related
     ElfReader elf_reader;

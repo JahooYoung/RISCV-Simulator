@@ -70,14 +70,17 @@ inline void *mem_heap_hi(){
 #define SET_UNUSED(p) (HEAD(p) &= ~0x1)
 #define SET_PREC_USED(p) (HEAD(p) |= 0x2)
 #define SET_PREC_UNUSED(p) (HEAD(p) &= ~0x2)
-#define SET_SIZE(p, size) \
-    HEAD(p) = ((size) & ~0x7) | (HEAD(p) & 0x7); \
+
+inline static void SET_SIZE(void *p, uint size)
+{
+    HEAD(p) = (size & ~0x7) | (HEAD(p) & 0x7);
     if (!CHK_USED(p)) FOOT(p) = size;
+}
 
 #define GET_PREC_PTR(p) ((void*)(p) - *((uint*)(p) - 2))
 
 #define SET_SON(p, i, sp) \
-    (*((uint*)(p) + (i)) = (uint)((size_t)sp & -1))
+    (*((uint*)(p) + (i)) = (uint)((size_t)sp & 0xFFFFFFFFLL))
 
 inline static void *GET_SON(void *p, uint i)
 {
@@ -223,7 +226,9 @@ static void delete_block(void *ptr)
                 break;
         if (segList[index] == ptr)
         {
-            segList[index] = GET_SON(ptr, 1);
+            void *succ = GET_SON(ptr, 1);
+            if (succ != NULL) SET_SON(succ, 0, NULL);
+            segList[index] = succ;
         }
         else
         {

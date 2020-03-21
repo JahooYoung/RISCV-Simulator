@@ -48,39 +48,48 @@ int MemorySystem::read_inst(reg_t ptr, uint32_t& st)
     if ((ptr & (PGSIZE - 1)) == 0xFFE) {
         st = *(uint16_t*)translate(ptr);
         st |= (uint32_t)*(uint16_t*)translate(ptr + 2) << 16;
+        return 2;
     } else {
         st = *(uint32_t*)translate(ptr);
+        return 1;
     }
-    return 0;
 }
 
-int MemorySystem::read_data(reg_t ptr, reg_t& st)
+int MemorySystem::read_data(reg_t ptr, reg_t& reg, int bytes)
 {
-    if ((ptr & (PGSIZE - 1)) > 0xFF8) {
-        st = 0;
-        for (int i = 0; i < 8; i++)
-            st |= (reg_t)*(uint8_t*)translate(ptr + i) << (8 * i);
-    } else {
-        st = *(reg_t*)translate(ptr);
-    }
-    return 0;
-}
-
-int MemorySystem::write_data(reg_t ptr, reg_t st, int bytes)
-{
-    if ((ptr & (PGSIZE - 1)) > 0x1000 - bytes) {
+    if ((ptr & (PGSIZE - 1)) > PGSIZE - bytes) {
+        reg = 0;
         for (int i = 0; i < bytes; i++)
-            *(uint8_t*)translate(ptr + i) = (st >> (i * 8)) & 0xFF;
+            reg |= (reg_t)*(uint8_t*)translate(ptr + i) << (i * 8);
+        return 2;
     } else {
         auto pa = translate(ptr);
         switch (bytes) {
-        case 1: *(uint8_t*)pa = (uint8_t)st; break;
-        case 2: *(uint16_t*)pa = (uint16_t)st; break;
-        case 4: *(uint32_t*)pa = (uint32_t)st; break;
-        case 8: *(uint64_t*)pa = (uint64_t)st; break;
+        case 1: reg = *(uint8_t*)pa; break;
+        case 2: reg = *(uint16_t*)pa; break;
+        case 4: reg = *(uint32_t*)pa; break;
+        case 8: reg = *(uint64_t*)pa; break;
         }
+        return 1;
     }
-    return 0;
+}
+
+int MemorySystem::write_data(reg_t ptr, reg_t reg, int bytes)
+{
+    if ((ptr & (PGSIZE - 1)) > PGSIZE - bytes) {
+        for (int i = 0; i < bytes; i++)
+            *(uint8_t*)translate(ptr + i) = (reg >> (i * 8)) & 0xFF;
+        return 2;
+    } else {
+        auto pa = translate(ptr);
+        switch (bytes) {
+        case 1: *(uint8_t*)pa = (uint8_t)reg; break;
+        case 2: *(uint16_t*)pa = (uint16_t)reg; break;
+        case 4: *(uint32_t*)pa = (uint32_t)reg; break;
+        case 8: *(uint64_t*)pa = (uint64_t)reg; break;
+        }
+        return 1;
+    }
 }
 
 uintptr_t MemorySystem::sbrk(size_t size)
@@ -135,4 +144,9 @@ void MemorySystem::output_memory(uintptr_t va, char fm, char sz, size_t length)
     } catch (runtime_error err) {
         printf("\nerror: %s\n", err.what());
     }
+}
+
+void MemorySystem::print_info()
+{
+    printf("    heap_pointer: %lx\n", heap_pointer);
 }

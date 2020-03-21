@@ -2,7 +2,6 @@
 #include <string>
 #include <iostream>
 #include <sstream>
-#include <syscall.h>
 #include "simulator.hpp"
 #include "decode_helpers.hpp"
 using namespace std;
@@ -18,12 +17,14 @@ Simulator::Simulator(const json& config)
     stack_size(config.value("stack_size", 1024)),  // KB
     elf_reader(config["elf_file"].get<string>())
 {
+    // read elf file
     string info_file = config.value("info_file", "");
     if (info_file != "")
         elf_reader.output_elf_info(info_file);
     if (disasemble)
         elf_reader.load_objdump(config.value("objdump", "riscv64-unknown-elf-objdump"), inst_map);
 
+    // get branch predictor
     string bpred_str = config.value("branch_prediction", "btfnt");
     if (bpred_str == "never_taken")
         br_pred = new NeverTaken();
@@ -35,6 +36,26 @@ Simulator::Simulator(const json& config)
         cerr << "error: no branch prediction strategy named " << bpred_str << endl;
         exit(EXIT_FAILURE);
     }
+
+    // get alu cycles configuration
+    json alu_json = config["alu_cycles"];
+    alu_cycles[ALU_ADD] = alu_cycles[ALU_SUB] = alu_json.value("add_sub", 1);
+    alu_cycles[ALU_MUL] = alu_cycles[ALU_MULH] = alu_cycles[ALU_MULHSU] =
+        alu_cycles[ALU_MULHU] = alu_json.value("mul", 3);
+    alu_cycles[ALU_DIV] = alu_cycles[ALU_DIVU] = alu_cycles[ALU_REM] =
+        alu_cycles[ALU_REMU] = alu_json.value("div_rem", 30);
+    alu_cycles[ALU_SLL] = alu_cycles[ALU_SRA] = alu_cycles[ALU_SRL] =
+        alu_cycles[ALU_XOR] = alu_cycles[ALU_OR] = alu_cycles[ALU_AND] =
+        alu_json.value("bit_op", 1);
+    alu_cycles[ALU_SLT] = alu_cycles[ALU_SLTU] = alu_json.value("slt", 1);
+
+    // get ecall cycles configuration
+    json ecall_json = config["ecall_cycles"];
+    ecall_cycles[SYS_cputchar] = ecall_json.value("cputchar", 1000);
+    ecall_cycles[SYS_sbrk] = ecall_json.value("sbrk", 1000);
+    ecall_cycles[SYS_readint] = ecall_json.value("readint", 10000);
+
+
 }
 
 Simulator::~Simulator()
@@ -52,7 +73,7 @@ int Simulator::IF()
     else if (M.opcode == OP_BRANCH && !M.cond && M.predPC != M.val2)
         pc = M.val2;
 
-    mem_sys.read_inst(pc, d.inst);
+    int cycles = mem_sys.read_inst(pc, d.inst);
     if ((d.inst & 3) != 3)
         d.inst &= 0xFFFF;
     d.valP = pc;
@@ -60,6 +81,7 @@ int Simulator::IF()
 
     // predict pc
     d.predPC = f.predPC = br_pred->predict(pc, d.inst);
+    return cycles;
 }
 
 int Simulator::ID()
@@ -78,6 +100,7 @@ int Simulator::ID()
         parse_32b_inst(D.inst, e);
     }
 
+    // get the register value of rs1 and rs2
     e.val1 = reg[e.rs1];
     e.val2 = reg[e.rs2];
     if (data_forwarding && e.rs1 != 0) {
@@ -114,6 +137,8 @@ int Simulator::ID()
             e.val2 = W.val;
         }
     }
+
+    return 1;
 }
 
 int Simulator::EX()
@@ -193,6 +218,8 @@ int Simulator::EX()
         case 0x7: m.cond = E.val1 >= E.val2; break;
         }
     }
+
+    return alu_cycles[E.alu_op];
 }
 
 int Simulator::MEM()
@@ -204,10 +231,13 @@ int Simulator::MEM()
     w.opcode = M.opcode;
     w.rd = M.rd;
 
-    int remains = 0;
+    int cycles = 1;
     switch (M.opcode) {
     case OP_LOAD:
-        remains = mem_sys.read_data(M.valE, w.val);
+        if (M.funct3 < 4)
+            cycles = mem_sys.read_data(M.valE, w.val, 1 << M.funct3);
+        else
+            cycles = mem_sys.read_data(M.valE, w.val, 1 << (M.funct3 - 4));
         switch (M.funct3) {
         case 0:
         case 1:
@@ -222,7 +252,7 @@ int Simulator::MEM()
         }
         break;
     case OP_STORE:
-        remains = mem_sys.write_data(M.valE, M.val2, 1 << M.funct3);
+        cycles = mem_sys.write_data(M.valE, M.val2, 1 << M.funct3);
         break;
     case OP_JALR:  // jalr
     case OP_JAL:  // jal
@@ -232,6 +262,8 @@ int Simulator::MEM()
     default:
         w.val = M.valE;
     }
+
+    return cycles;
 }
 
 int Simulator::WB()
@@ -241,6 +273,8 @@ int Simulator::WB()
 
     if (W.rd != 0)
         reg[W.rd] = W.val;
+
+    return 1;
 }
 
 void Simulator::run_prog()
@@ -272,31 +306,36 @@ void Simulator::run_prog()
         m = {};
         w = {};
 
+        int max_cycles = 0;
+        const char *stage;
         try {
-            // printf("WB.."); fflush(stdout);
-            WB();
-            // printf("MEM.."); fflush(stdout);
-            MEM();
-            // printf("EX.."); fflush(stdout);
-            EX();
-            // printf("ID.."); fflush(stdout);
-            ID();
-            // printf("IF.."); fflush(stdout);
-            IF();
+            stage = "WB";
+            max_cycles = max(max_cycles, WB());
+            stage = "MEM";
+            max_cycles = max(max_cycles, MEM());
+            stage = "EX";
+            max_cycles = max(max_cycles, EX());
+            stage = "ID";
+            max_cycles = max(max_cycles, ID());
+            stage = "IF";
+            max_cycles = max(max_cycles, IF());
+            stage = "ecall";
             if (W.opcode == OP_ECALL) {
-                process_syscall();
+                max_cycles = max(max_cycles, process_syscall());
             }
         } catch (ExitEvent) {
             printf("======== above are user output ========\n");
             printf("program exited normally\n");
             printf("    ticks: %lu\n", tick);
             printf("    instructions: %lu\n", instruction_count);
+            mem_sys.print_info();
             break;
         } catch (runtime_error err) {
             printf("======== above are user output ========\n");
-            printf("runtime_error: %s\n", err.what());
+            printf("runtime_error in %s: %s\n", stage, err.what());
             print_pipeline();
             print_regs();
+            mem_sys.print_info();
             break;
         }
 
@@ -340,7 +379,7 @@ void Simulator::run_prog()
         if (!W.stall && !W.bubble)
             instruction_count++;
 
-        tick++;
+        tick += max_cycles;
         F.update(f);
         D.update(d);
         E.update(e);
