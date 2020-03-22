@@ -1,17 +1,52 @@
 #include <new>
 #include <cstring>
 #include <cassert>
+#include <map>
 #include "memory_system.hpp"
+using nlohmann::json;
 using namespace std;
 
-MemorySystem::MemorySystem()
+MemorySystem::MemorySystem(const json& cache_list, int memory_cycles)
     : heap_pointer(HEAP_START)
-{}
+{
+    map<string, Storage*> storage_map;
+    inst_entry = data_entry = memory = new Memory(memory_cycles);
+    storage_map["memory"] = memory;
+    min_line_size = PGSIZE;
+    for (auto &conf: cache_list) {
+        auto st = new Cache(conf);
+        cache.push_back(st);
+        storage_map[st->get_name()] = st;
+        min_line_size = min(min_line_size, st->get_line_size());
+        if (conf.value("instruction_entry", false))
+            inst_entry = st;
+        if (conf.value("data_entry", false))
+            data_entry = st;
+    }
+
+    for (auto &conf: cache_list) {
+        auto st = dynamic_cast<Cache*>(storage_map[conf["name"].get<string>()]);
+        st->set_next(storage_map[conf["cache_for"].get<string>()]);
+    }
+}
 
 MemorySystem::~MemorySystem()
 {
+    for (auto c: cache)
+        delete c;
     for (const auto &pr: page_table)
         operator delete((void*)pr.second, align_val_t(PGSIZE));
+}
+
+void MemorySystem::reset()
+{
+    heap_pointer = HEAP_START;
+    for (const auto &pr: page_table)
+        operator delete((void*)pr.second, align_val_t(PGSIZE));
+    page_table.clear();
+
+    for (auto c: cache)
+        c->invalidate();
 }
 
 pte_t MemorySystem::page_alloc(uintptr_t va)
@@ -48,11 +83,15 @@ int MemorySystem::read_inst(reg_t ptr, uint32_t& st)
     if ((ptr & (PGSIZE - 1)) == 0xFFE) {
         st = *(uint16_t*)translate(ptr);
         st |= (uint32_t)*(uint16_t*)translate(ptr + 2) << 16;
-        return 2;
     } else {
         st = *(uint32_t*)translate(ptr);
-        return 1;
     }
+
+    // get cycles num
+    int cycles = inst_entry->read(translate(ptr));
+    if ((ptr & (min_line_size - 1)) > min_line_size - 4)
+        cycles += inst_entry->read(translate(ptr + 2));
+    return cycles;
 }
 
 int MemorySystem::read_data(reg_t ptr, reg_t& reg, int bytes)
@@ -61,7 +100,6 @@ int MemorySystem::read_data(reg_t ptr, reg_t& reg, int bytes)
         reg = 0;
         for (int i = 0; i < bytes; i++)
             reg |= (reg_t)*(uint8_t*)translate(ptr + i) << (i * 8);
-        return 2;
     } else {
         auto pa = translate(ptr);
         switch (bytes) {
@@ -70,8 +108,13 @@ int MemorySystem::read_data(reg_t ptr, reg_t& reg, int bytes)
         case 4: reg = *(uint32_t*)pa; break;
         case 8: reg = *(uint64_t*)pa; break;
         }
-        return 1;
     }
+
+    // get cycles num
+    int cycles = data_entry->read(translate(ptr));
+    if ((ptr & (min_line_size - 1)) > min_line_size - bytes)
+        cycles += data_entry->read(translate(ptr + bytes - 1));
+    return cycles;
 }
 
 int MemorySystem::write_data(reg_t ptr, reg_t reg, int bytes)
@@ -79,7 +122,6 @@ int MemorySystem::write_data(reg_t ptr, reg_t reg, int bytes)
     if ((ptr & (PGSIZE - 1)) > PGSIZE - bytes) {
         for (int i = 0; i < bytes; i++)
             *(uint8_t*)translate(ptr + i) = (reg >> (i * 8)) & 0xFF;
-        return 2;
     } else {
         auto pa = translate(ptr);
         switch (bytes) {
@@ -88,8 +130,13 @@ int MemorySystem::write_data(reg_t ptr, reg_t reg, int bytes)
         case 4: *(uint32_t*)pa = (uint32_t)reg; break;
         case 8: *(uint64_t*)pa = (uint64_t)reg; break;
         }
-        return 1;
     }
+
+    // get cycles num
+    int cycles = data_entry->write(translate(ptr));
+    if ((ptr & (min_line_size - 1)) > min_line_size - bytes)
+        cycles += data_entry->write(translate(ptr + bytes - 1));
+    return cycles;
 }
 
 uintptr_t MemorySystem::sbrk(size_t size)

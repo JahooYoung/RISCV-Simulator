@@ -2,9 +2,12 @@
 #define MEMORY_SYSTEM_HPP
 
 #include <cstdio>
-#include <map>
+#include <unordered_map>
+#include <vector>
+#include <nlohmann/json.hpp>
 #include "types.hpp"
 #include "elf.hpp"
+#include "cache.hpp"
 
 typedef uint64_t pte_t;
 
@@ -21,14 +24,20 @@ typedef uint64_t pte_t;
 class MemorySystem
 {
 private:
-    std::map<uintptr_t, pte_t> page_table;
+    std::unordered_map<uintptr_t, pte_t> page_table;
     uintptr_t heap_pointer;
+
+    std::vector<Cache*> cache;
+    int min_line_size;  // must be an power of 2, and >= 8
+    Storage *inst_entry, *data_entry;
+    Memory *memory;
 
     uintptr_t translate(reg_t ptr);
 
 public:
-    MemorySystem();
+    MemorySystem(const nlohmann::json& cache_list, int memory_cycles);
     ~MemorySystem();
+    void reset();
     pte_t page_alloc(uintptr_t va);
     void load_segment(FILE *file, const Elf64_Phdr& phdr);
     // return the number of cycles required

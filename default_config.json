@@ -20,35 +20,44 @@
             "name": "L1_instruction_cache",
             "instruction_entry": true,
             "size": 48,
-            "ways": 12,
-            "hit_cycles": 3,
+            "associativity": 12,
+            "cache_line_bytes": 64,
+            "write_back": true,
+            "write_allocate": true,
+            "hit_cycles": 1,
             "cache_for": "L2_cache"
         },
         {
             "name": "L1_data_cache",
             "data_entry": true,
             "size": 32,
-            "ways": 8,
-            "hit_cycles": 3,
+            "associativity": 8,
+            "cache_line_bytes": 64,
+            "write_back": true,
+            "write_allocate": true,
+            "hit_cycles": 1,
             "cache_for": "L2_cache"
         },
         {
             "name": "L2_cache",
             "size": 512,
-            "ways": 8,
-            "hit_cycles": 10,
+            "associativity": 8,
+            "cache_line_bytes": 64,
+            "write_back": true,
+            "write_allocate": true,
+            "hit_cycles": 8,
             "cache_for": "L3_cache"
         },
         {
             "name": "L3_cache",
             "size": 8192,
-            "ways": 16,
-            "hit_cycles": 40,
+            "associativity": 16,
+            "cache_line_bytes": 64,
+            "write_back": true,
+            "write_allocate": true,
+            "hit_cycles": 20,
             "cache_for": "memory"
         }
     ],
-    "memory_cycles": {
-        "read": 100,
-        "write": 100
-    }
+    "memory_cycles": 100
 }

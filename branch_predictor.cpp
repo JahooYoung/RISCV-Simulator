@@ -10,11 +10,7 @@ reg_t NeverTaken::predict(reg_t pc, inst_t inst)
 reg_t AlwaysTaken::predict(reg_t pc, inst_t inst)
 {
     EXReg e;
-    if ((inst & 3) != 3) {
-        parse_16b_inst(inst, e);
-    } else {
-        parse_32b_inst(inst, e);
-    }
+    parse_inst(inst, e);
     switch (e.opcode) {
     case OP_BRANCH:
     case OP_JAL:
@@ -27,11 +23,7 @@ reg_t AlwaysTaken::predict(reg_t pc, inst_t inst)
 reg_t BTFNT::predict(reg_t pc, inst_t inst)
 {
     EXReg e;
-    if ((inst & 3) != 3) {
-        parse_16b_inst(inst, e);
-    } else {
-        parse_32b_inst(inst, e);
-    }
+    parse_inst(inst, e);
     switch (e.opcode) {
     case OP_BRANCH:
     case OP_JAL:

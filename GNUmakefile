@@ -1,6 +1,6 @@
 CXX := g++
-CXXFLAGS := -Wall -O2 -std=c++17 -MD
-LFLAGS := -O2
+CXXFLAGS := -Wall -O3 -std=c++17 -MD
+LFLAGS := -O3
 PREFIX := build
 TARGET := $(PREFIX)/simulator
 
@@ -67,7 +67,7 @@ $(LIB): $(LIB_OBJS)
 	$(RISCV_AR) -crv $@ $^
 
 $(LIB_PREFIX)/%.o: lib/%.c
-	$(RISCV_CC) -O2 -MD -Iinclude -c -o $@ $<
+	$(RISCV_CC) -O3 -MD -Iinclude -c -o $@ $<
 
 $(LIB_PREFIX)/.deps: $(wildcard $(LIB_PREFIX)/*.d)
 	@perl mergedep.pl $@ $^

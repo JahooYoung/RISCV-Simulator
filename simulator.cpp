@@ -15,7 +15,8 @@ Simulator::Simulator(const json& config)
     data_forwarding(config.value("data_forwarding", true)),
     verbose(config.value("verbose", false)),
     stack_size(config.value("stack_size", 1024)),  // KB
-    elf_reader(config["elf_file"].get<string>())
+    elf_reader(config["elf_file"].get<string>()),
+    mem_sys(config["cache"], config.value("memory_cycles", 100))
 {
     // read elf file
     string info_file = config.value("info_file", "");
@@ -54,8 +55,6 @@ Simulator::Simulator(const json& config)
     ecall_cycles[SYS_cputchar] = ecall_json.value("cputchar", 1000);
     ecall_cycles[SYS_sbrk] = ecall_json.value("sbrk", 1000);
     ecall_cycles[SYS_readint] = ecall_json.value("readint", 10000);
-
-
 }
 
 Simulator::~Simulator()
@@ -93,12 +92,7 @@ int Simulator::ID()
     e.valP = D.valP;
     e.predPC = D.predPC;
     // get opcode, funct3, imm, alu_op, rs1, rs2, rd, mem_op, compressed_inst
-    if ((D.inst & 3) != 3) {
-        e.compressed_inst = true;
-        parse_16b_inst(D.inst, e);
-    } else {
-        parse_32b_inst(D.inst, e);
-    }
+    parse_inst(D.inst, e);
 
     // get the register value of rs1 and rs2
     e.val1 = reg[e.rs1];
@@ -288,7 +282,7 @@ void Simulator::run_prog()
     D.bubble = E.bubble = M.bubble = W.bubble = true;
     stepping = false;
 
-    mem_sys = MemorySystem();
+    mem_sys.reset();
     elf_reader.load_elf(F.predPC, mem_sys);
 
     // initialize stack
@@ -320,9 +314,8 @@ void Simulator::run_prog()
             stage = "IF";
             max_cycles = max(max_cycles, IF());
             stage = "ecall";
-            if (W.opcode == OP_ECALL) {
+            if (W.opcode == OP_ECALL)
                 max_cycles = max(max_cycles, process_syscall());
-            }
         } catch (ExitEvent) {
             printf("======== above are user output ========\n");
             printf("program exited normally\n");

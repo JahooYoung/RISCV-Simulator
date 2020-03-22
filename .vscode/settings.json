@@ -58,5 +58,9 @@
         "stdint.h": "c",
         "syscall.h": "c",
         "stddef.h": "c"
-    }
+    },
+    "cSpell.words": [
+        "ECALL",
+        "nlohmann"
+    ]
 }

@@ -1,7 +1,7 @@
 #ifndef ELF_HPP
 #define ELF_HPP
 
-#include <stdint.h>
+#include <cstdint>
 
 /* Type for a 16-bit quantity.  */
 typedef uint16_t Elf64_Half;
