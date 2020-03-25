@@ -4,6 +4,12 @@
 #include "elf_reader.hpp"
 using namespace std;
 
+void fread_wrapper(void *ptr, size_t size, size_t nmemb, FILE *stream)
+{
+    if (fread(ptr, size, nmemb, stream) != nmemb)
+        throw_error("cannot read elf file");
+}
+
 ElfReader::ElfReader(const string& _elf_filename)
     : elf_filename(_elf_filename)
 {
@@ -12,51 +18,56 @@ ElfReader::ElfReader(const string& _elf_filename)
         cerr << "error: cannot open " << elf_filename << endl;
         exit(EXIT_FAILURE);
     }
-    fread(&elf64_hdr, sizeof(elf64_hdr), 1, elf_file);
 
-    // read section header strings
-    Elf64_Shdr elf64_shdr;
-    fseek(elf_file, elf64_hdr.e_shoff + elf64_hdr.e_shstrndx * sizeof(Elf64_Shdr), SEEK_SET);
-    fread(&elf64_shdr, sizeof(elf64_shdr), 1, elf_file);
-    shstr = new char[elf64_shdr.sh_size];
-    fseek(elf_file, elf64_shdr.sh_offset, SEEK_SET);
-    fread(shstr, elf64_shdr.sh_size, 1, elf_file);
+    try {
+        fread_wrapper(&elf64_hdr, sizeof(elf64_hdr), 1, elf_file);
 
-    // read section headers
-    int symtab_addr, symtab_size, symtab_num;
-    int strtab_offset, strtab_size;
-    section_header.resize(elf64_hdr.e_shnum);
-    fseek(elf_file, elf64_hdr.e_shoff, SEEK_SET);
-    fread(section_header.data(), sizeof(Elf64_Shdr), elf64_hdr.e_shnum, elf_file);
-    for (const auto& elf64_shdr: section_header) {
-        if (elf64_shdr.sh_type == SHT_SYMTAB) {
-            symtab_addr = elf64_shdr.sh_offset;
-            symtab_size = elf64_shdr.sh_size;
-            symtab_num = elf64_shdr.sh_size / elf64_shdr.sh_entsize;
+        // read section header strings
+        Elf64_Shdr elf64_shdr;
+        fseek(elf_file, elf64_hdr.e_shoff + elf64_hdr.e_shstrndx * sizeof(Elf64_Shdr), SEEK_SET);
+        fread_wrapper(&elf64_shdr, sizeof(elf64_shdr), 1, elf_file);
+        shstr = new char[elf64_shdr.sh_size];
+        fseek(elf_file, elf64_shdr.sh_offset, SEEK_SET);
+        fread_wrapper(shstr, elf64_shdr.sh_size, 1, elf_file);
+
+        // read section headers
+        int symtab_addr = 0, symtab_num = 0;
+        int strtab_offset = 0, strtab_size = 0;
+        section_header.resize(elf64_hdr.e_shnum);
+        fseek(elf_file, elf64_hdr.e_shoff, SEEK_SET);
+        fread_wrapper(section_header.data(), sizeof(Elf64_Shdr), elf64_hdr.e_shnum, elf_file);
+        for (const auto& elf64_shdr: section_header) {
+            if (elf64_shdr.sh_type == SHT_SYMTAB) {
+                symtab_addr = elf64_shdr.sh_offset;
+                symtab_num = elf64_shdr.sh_size / elf64_shdr.sh_entsize;
+            }
+            if (elf64_shdr.sh_type == SHT_STRTAB
+                && strcmp(shstr + elf64_shdr.sh_name, ".strtab") == 0) {
+                strtab_offset = elf64_shdr.sh_offset;
+                strtab_size = elf64_shdr.sh_size;
+            }
         }
-        if (elf64_shdr.sh_type == SHT_STRTAB
-            && strcmp(shstr + elf64_shdr.sh_name, ".strtab") == 0) {
-            strtab_offset = elf64_shdr.sh_offset;
-            strtab_size = elf64_shdr.sh_size;
+
+        // read program headers
+        program_header.resize(elf64_hdr.e_phnum);
+        fseek(elf_file, elf64_hdr.e_phoff, SEEK_SET);
+        fread_wrapper(program_header.data(), sizeof(Elf64_Phdr), elf64_hdr.e_phnum, elf_file);
+
+        // read symbol table
+        char *stradr = new char[strtab_size];
+        fseek(elf_file, strtab_offset, SEEK_SET);
+        fread_wrapper(stradr, strtab_size, 1, elf_file);
+        Elf64_Sym elf64_sym;
+        fseek(elf_file, symtab_addr, SEEK_SET);
+        for (int i = 0; i < symtab_num; i++) {
+            fread_wrapper(&elf64_sym, sizeof(elf64_sym), 1, elf_file);
+            symtab[stradr + elf64_sym.st_name] = elf64_sym;
         }
+        delete[] stradr;
+    } catch (runtime_error err) {
+        cerr << "error: " << err.what() << endl;
+        exit(EXIT_FAILURE);
     }
-
-    // read program headers
-    program_header.resize(elf64_hdr.e_phnum);
-    fseek(elf_file, elf64_hdr.e_phoff, SEEK_SET);
-    fread(program_header.data(), sizeof(Elf64_Phdr), elf64_hdr.e_phnum, elf_file);
-
-    // read symbol table
-    char *stradr = new char[strtab_size];
-    fseek(elf_file, strtab_offset, SEEK_SET);
-    fread(stradr, strtab_size, 1, elf_file);
-    Elf64_Sym elf64_sym;
-    fseek(elf_file, symtab_addr, SEEK_SET);
-    for (int i = 0; i < symtab_num; i++) {
-        fread(&elf64_sym, sizeof(elf64_sym), 1, elf_file);
-        symtab[stradr + elf64_sym.st_name] = elf64_sym;
-    }
-    delete[] stradr;
 }
 
 ElfReader::~ElfReader()
@@ -169,8 +180,13 @@ void ElfReader::load_objdump(const string& objdump_path, InstructionMap& inst_ma
 
 void ElfReader::load_elf(reg_t& pc, MemorySystem& mem_sys)
 {
-    for (const auto& elf64_phdr: program_header) {
-        mem_sys.load_segment(elf_file, elf64_phdr);
+    try {
+        for (const auto& elf64_phdr: program_header) {
+            mem_sys.load_segment(elf_file, elf64_phdr);
+        }
+    } catch (runtime_error err) {
+        cerr << "error: " << err.what() << endl;
+        exit(EXIT_FAILURE);
     }
     pc = elf64_hdr.e_entry;
 }

@@ -80,12 +80,12 @@ struct IDReg : public PipeReg
 
 struct EXReg : public PipeReg
 {
-    uint8_t opcode, funct3;
-    reg_t val1, val2, imm, valP;
-    reg_t predPC;
-    ALU_OP alu_op;
-    uint8_t rs1, rs2, rd;
     bool compressed_inst;
+    uint8_t opcode, funct3;
+    uint8_t rs1, rs2, rd;
+    reg_t val1, val2, imm, valP;
+    ALU_OP alu_op;
+    reg_t predPC;
 
     void update(const EXReg& r);
     void print();
@@ -94,10 +94,10 @@ struct EXReg : public PipeReg
 struct MEMReg : public PipeReg
 {
     uint8_t opcode, funct3;
+    uint8_t rd;
     bool cond;
     reg_t valE, val2;
     reg_t predPC;
-    uint8_t rd;
 
     void update(const MEMReg& r);
     void print();
@@ -106,8 +106,8 @@ struct MEMReg : public PipeReg
 struct WBReg : public PipeReg
 {
     uint8_t opcode;
-    reg_t val;
     uint8_t rd;
+    reg_t val;
 
     void update(const WBReg& r);
     void print();

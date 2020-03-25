@@ -11,7 +11,7 @@
 
 typedef uint64_t pte_t;
 
-#define PGSIZE      4096
+#define PGSIZE      (1U << 12)
 
 #define PGADDR(pte)     (pte & ~0xFFFULL)
 #define PTE_ADDR(pte)   PGADDR(pte)
@@ -19,7 +19,7 @@ typedef uint64_t pte_t;
 
 #define E_NO_MEM 1
 
-#define HEAP_START 0x800000000LL
+#define HEAP_START 0x800000000UL
 
 class MemorySystem
 {
@@ -28,7 +28,7 @@ private:
     uintptr_t heap_pointer;
 
     std::vector<Cache*> cache;
-    int min_line_size;  // must be an power of 2, and >= 8
+    unsigned min_line_size;  // must be an power of 2, and >= 8
     Storage *inst_entry, *data_entry;
     Memory *memory;
 

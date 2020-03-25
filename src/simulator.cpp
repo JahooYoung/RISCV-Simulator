@@ -10,7 +10,7 @@ using nlohmann::json;
 class ExitEvent {};
 
 Simulator::Simulator(const json& config)
-    : disasemble(config.value("disasemble", false)),
+    : disassemble(config.value("disassemble", true)),
     single_step(config.value("single_step", false)),
     data_forwarding(config.value("data_forwarding", true)),
     verbose(config.value("verbose", false)),
@@ -22,11 +22,11 @@ Simulator::Simulator(const json& config)
     string info_file = config.value("info_file", "");
     if (info_file != "")
         elf_reader.output_elf_info(info_file);
-    if (disasemble)
+    if (disassemble)
         elf_reader.load_objdump(config.value("objdump", "riscv64-unknown-elf-objdump"), inst_map);
 
     // get branch predictor
-    string bpred_str = config.value("branch_prediction", "btfnt");
+    string bpred_str = config.value("branch_predictor", "btfnt");
     if (bpred_str == "never_taken")
         br_pred = new NeverTaken();
     else if (bpred_str == "always_taken")
@@ -195,6 +195,8 @@ int Simulator::EX()
     case ALU_AND: m.valE = valA & valB; break;
     case ALU_SLT: m.valE = (int64_t)valA < (int64_t)valB; break;
     case ALU_SLTU: m.valE = valA < valB; break;
+    default:
+        throw_error("unsupported ALU_OP: %d", E.alu_op);
     }
 
     // truncate for addw, subw, ...
@@ -271,6 +273,35 @@ int Simulator::WB()
     return 1;
 }
 
+void Simulator::process_control_signal()
+{
+    bool meet_ecall = (E.opcode == OP_ECALL || M.opcode == OP_ECALL || W.opcode == OP_ECALL);
+    bool mispredicted =
+        (((E.opcode == OP_BRANCH && m.cond) || E.opcode == OP_JALR || E.opcode == OP_JAL)
+            && E.predPC != m.valE)
+        || (E.opcode == OP_BRANCH && !m.cond && E.predPC != m.val2);
+
+    d.bubble |= mispredicted;
+    e.bubble |= mispredicted;
+
+    bool data_dependant;
+    if (data_forwarding) {
+        data_dependant = (e.rs1 != 0 && e.rs1 == E.rd && E.opcode == OP_LOAD) ||
+            (e.rs2 != 0 && e.rs2 == E.rd && E.opcode == OP_LOAD);
+    } else {
+        data_dependant = !mispredicted && (
+            (e.rs1 != 0 && (E.rd == e.rs1 || M.rd == e.rs1 || W.rd == e.rs1)) ||
+            (e.rs2 != 0 && (E.rd == e.rs2 || M.rd == e.rs2 || W.rd == e.rs2)));
+    }
+    F.stall |= data_dependant | meet_ecall;
+    D.stall |= data_dependant | meet_ecall;
+    e.bubble |= data_dependant | meet_ecall;
+
+    e.bubble |= D.bubble;
+    m.bubble |= E.bubble;
+    w.bubble |= M.bubble;
+}
+
 void Simulator::run_prog()
 {
     memset(reg, 0, sizeof(reg));
@@ -281,8 +312,8 @@ void Simulator::run_prog()
     W = {};
     D.bubble = E.bubble = M.bubble = W.bubble = true;
     stepping = false;
-
     mem_sys.reset();
+
     elf_reader.load_elf(F.predPC, mem_sys);
 
     // initialize stack
@@ -319,8 +350,8 @@ void Simulator::run_prog()
         } catch (ExitEvent) {
             printf("======== above are user output ========\n");
             printf("program exited normally\n");
-            printf("    ticks: %lu\n", tick);
-            printf("    instructions: %lu\n", instruction_count);
+            printf("ticks: %lu\n", tick);
+            printf("instruction_count: %lu\n", instruction_count);
             mem_sys.print_info();
             break;
         } catch (runtime_error err) {
@@ -343,31 +374,7 @@ void Simulator::run_prog()
                 break;
         }
 
-        // control logic: stall and bubble
-        bool meet_ecall = (E.opcode == OP_ECALL || M.opcode == OP_ECALL || W.opcode == OP_ECALL);
-        bool mispredicted =
-            (((E.opcode == OP_BRANCH && m.cond) || E.opcode == OP_JALR || E.opcode == OP_JAL)
-                && E.predPC != m.valE)
-            || (E.opcode == OP_BRANCH && !m.cond && E.predPC != m.val2);
-
-        d.bubble |= mispredicted;
-        e.bubble |= mispredicted;
-
-        bool data_dependant;
-        if (data_forwarding) {
-            data_dependant = (e.rs1 != 0 && e.rs1 == E.rd && E.opcode == OP_LOAD) ||
-                             (e.rs2 != 0 && e.rs2 == E.rd && E.opcode == OP_LOAD);
-        } else {
-            data_dependant = (e.rs1 != 0 && (E.rd == e.rs1 || M.rd == e.rs1 || W.rd == e.rs1)) ||
-                             (e.rs2 != 0 && (E.rd == e.rs2 || M.rd == e.rs2 || W.rd == e.rs2));
-        }
-        F.stall |= data_dependant | meet_ecall;
-        D.stall |= data_dependant | meet_ecall;
-        e.bubble |= data_dependant | meet_ecall;
-
-        e.bubble |= D.bubble;
-        m.bubble |= E.bubble;
-        w.bubble |= M.bubble;
+        process_control_signal();
 
         if (!W.stall && !W.bubble)
             instruction_count++;
@@ -385,7 +392,7 @@ void Simulator::run_prog()
 int Simulator::process_syscall()
 {
     static stringstream line;
-    reg_t a1 = reg[REG_A1], a2 = reg[REG_A2];
+    reg_t a1 = reg[REG_A1];
     switch (reg[REG_A7]) {
     case SYS_exit:
         throw ExitEvent();

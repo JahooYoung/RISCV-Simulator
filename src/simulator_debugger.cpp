@@ -77,7 +77,7 @@ int Simulator::process_command()
             stepping = false;
             break;
         }
-        if (cmd == "b" || cmd == "break") {
+        if (cmd == "b" || cmd == "breakpoint") {
             if (arg == "") {
                 printf("error: no address/symbol provided\n");
                 continue;
@@ -140,7 +140,7 @@ int Simulator::process_command()
                 }
             }
             string format = cmd.substr(2);
-            size_t length, nxt = 0;
+            size_t length = 0, nxt = 0;
             try {
                 length = stoll(format, &nxt);
                 format = format.substr(nxt);

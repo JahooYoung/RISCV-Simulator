@@ -41,18 +41,17 @@ syscall(int num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5
 	return ret;
 }
 
-void
-sys_cputchar(int ch)
+void sys_cputchar(int ch)
 {
 	syscall(SYS_cputchar, (uint64_t)ch, 0, 0, 0, 0);
 }
 
 void *sys_sbrk(size_t size)
 {
-    return syscall(SYS_sbrk, (uint64_t)size, 0, 0, 0, 0);
+    return (void*)syscall(SYS_sbrk, (uint64_t)size, 0, 0, 0, 0);
 }
 
 int sys_readint()
 {
-    return syscall(SYS_readint, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_readint, 0, 0, 0, 0, 0);
 }

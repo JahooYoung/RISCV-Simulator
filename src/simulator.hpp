@@ -14,7 +14,7 @@ class Simulator
 {
 private:
     // configuration
-    bool disasemble;
+    bool disassemble;
     bool single_step;
     bool data_forwarding;
     bool verbose;
@@ -47,6 +47,7 @@ private:
     int WB();
 
     int process_syscall();
+    void process_control_signal();
     void run_prog();
 
     // debug related

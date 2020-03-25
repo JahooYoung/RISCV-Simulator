@@ -77,6 +77,9 @@ static const map<uint8_t, tuple<uint8_t, ALU_OP>> C_R_op_map = {
     {0x1 << 2 | 1, {0x3b, ALU_ADD}},
 };
 
+/**
+ *  extract `count` bits from `start` in `inst` and left shift `shamt` bits
+ */
 inline uint32_t getbits(inst_t inst, int start, int count, int shamt = 0)
 {
     return ((inst >> start) & ((1 << count) - 1)) << shamt;

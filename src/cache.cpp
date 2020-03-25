@@ -18,8 +18,8 @@ Cache::Cache(const json& config)
         size = config.at("size").get<int>() * 1024;  // KB => Bytes
         E = config.at("associativity").get<int>();
         line_size = config.value("cache_line_bytes", 64);
-        write_back = config.value("write_back", false);
-        write_allocate = config.value("write_allocate", false);
+        write_back = config.value("write_back", true);
+        write_allocate = config.value("write_allocate", true);
         hit_cycles = config.at("hit_cycles").get<int>();
     } catch (nlohmann::detail::out_of_range err) {
         printf("cache config error: %s\n", err.what());
@@ -46,9 +46,9 @@ string Cache::get_name() const
     return name;
 }
 
-int Cache::get_line_size() const
+unsigned Cache::get_line_size() const
 {
-    return 1 << b;
+    return 1U << b;
 }
 
 void Cache::set_next(Storage *st)
@@ -58,6 +58,7 @@ void Cache::set_next(Storage *st)
 
 void Cache::invalidate()
 {
+    hit_num = miss_num = 0;
     for (int i = 0; i < S; i++)
         for (int j = 0; j < E; j++)
             cache_set[i][j].valid = false;
@@ -86,9 +87,11 @@ int Cache::read(uintptr_t ptr)
     auto line = get_cache_line(ptr);
     if (line->valid && line->tag == tag) {
         // read hit
+        hit_num++;
         line->timestamp = time;
         return hit_cycles;
     }
+    miss_num++;
     int cycles = 0;
     if (write_back && line->valid && line->dirty)
         cycles += next->write((line->tag << (b + s)) | (ptr & ((S - 1) << b)));
@@ -107,6 +110,7 @@ int Cache::write(uintptr_t ptr)
     auto line = get_cache_line(ptr);
     if (line->valid && line->tag == tag) {
         // write hit
+        hit_num++;
         line->dirty = true;
         line->timestamp = time;
         int cycles = hit_cycles;
@@ -114,6 +118,7 @@ int Cache::write(uintptr_t ptr)
             cycles += next->write(ptr);
         return cycles;
     }
+    miss_num++;
     if (!write_allocate)
         return next->write(ptr);
     int cycles = 0;
@@ -125,6 +130,12 @@ int Cache::write(uintptr_t ptr)
     line->timestamp = time;
     line->tag = tag;
     return cycles;
+}
+
+void Cache::print_info()
+{
+    printf("%20s: hit=%lu miss=%lu miss_rate=%.3f%%\n", name.c_str(),
+        hit_num, miss_num, (double)miss_num / (hit_num + miss_num) * 100);
 }
 
 

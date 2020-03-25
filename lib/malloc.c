@@ -11,6 +11,7 @@
  *     An optimization is to set a minimum size when extending the heap, which
  *     reduces the time of system calls.
  */
+#include <string.h>
 #include <tinylib.h>
 #include <syscall.h>
 
@@ -18,9 +19,9 @@ typedef unsigned long long uLL;
 typedef unsigned int uint;
 
 /* If you want debugging output, use the following macro.  When you hand
- * in, remove the #define DEBUGGGG line. */
-// #define DEBUGGGG
-#ifdef DEBUGGGG
+ * in, remove the #define MALLOC_DEBUG line. */
+// #define MALLOC_DEBUG
+#ifdef MALLOC_DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__), fflush(stdout)
 #define checker(...) mm_checkheap(__VA_ARGS__)
 #else
@@ -34,21 +35,21 @@ typedef unsigned int uint;
 #define MIN_TREE_BLOCK_SIZE 40
 #define MIN_NEW_SIZE 128
 #define MAX_DEPTH 300
-#define HEAP_START 0x800000000LL
+#define HEAP_START 0x800000000ULL
 
-static char *heap = HEAP_START;
-static char *mem_brk = HEAP_START;
+static char *heap = (char*)HEAP_START;
+static char *mem_brk = (char*)HEAP_START;
 
-inline void *mem_sbrk(size_t incr) {
+static inline void *mem_sbrk(size_t incr) {
     mem_brk += incr;
 	return sys_sbrk(incr);
 }
 
-inline void *mem_heap_lo(){
+static inline void *mem_heap_lo(){
 	return (void *)heap;
 }
 
-inline void *mem_heap_hi(){
+static inline void *mem_heap_hi(){
 	return (void *)(mem_brk - 1);
 }
 
@@ -93,7 +94,7 @@ inline static void *GET_SON(void *p, uint i)
 static void *root; // the root of the splay tree
 static void **segList; // the small-size segregated list
 
-#ifdef DEBUGGGG
+#ifdef MALLOC_DEBUG
 int op_counter;
 #endif
 
@@ -347,7 +348,7 @@ static void *find_best_fit(uint asize)
  */
 int mm_init(void)
 {
-#ifdef DEBUGGGG
+#ifdef MALLOC_DEBUG
     op_counter = 0;
 #endif
     void *p = mem_sbrk(32) + 32;

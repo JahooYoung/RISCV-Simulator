@@ -24,6 +24,7 @@ private:
     int hit_cycles;
     Storage *next;
     uint32_t time;
+    uint64_t hit_num, miss_num;
 
     struct CacheLine
     {
@@ -38,11 +39,12 @@ public:
     Cache(const nlohmann::json& config);
     ~Cache();
     std::string get_name() const;
-    int get_line_size() const;
+    unsigned get_line_size() const;
     void set_next(Storage *st);
     void invalidate();
     int read(uintptr_t ptr);
     int write(uintptr_t ptr);
+    void print_info();
 };
 
 class Memory : public Storage

@@ -32,6 +32,7 @@ MemorySystem::MemorySystem(const json& cache_list, int memory_cycles)
 
 MemorySystem::~MemorySystem()
 {
+    delete memory;
     for (auto c: cache)
         delete c;
     for (const auto &pr: page_table)
@@ -65,7 +66,8 @@ void MemorySystem::load_segment(FILE *file, const Elf64_Phdr& phdr)
     for (uintptr_t va = phdr.p_vaddr; va < end; va = PGADDR(va) + PGSIZE) {
         page_alloc(va);
         size_t sz = min(PGSIZE - va % PGSIZE, filesz);
-        fread((void*)translate(va), sz, 1, file);
+        if (fread((void*)translate(va), sz, 1, file) != 1)
+            throw runtime_error("cannot load elf file");
         filesz -= sz;
     }
 }
@@ -195,5 +197,7 @@ void MemorySystem::output_memory(uintptr_t va, char fm, char sz, size_t length)
 
 void MemorySystem::print_info()
 {
-    printf("    heap_pointer: %lx\n", heap_pointer);
+    printf("heap_pointer: %lx (started from %lx)\n", heap_pointer, HEAP_START);
+    for (auto c: cache)
+        c->print_info();
 }

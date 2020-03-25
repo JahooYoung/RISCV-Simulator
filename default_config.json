@@ -1,7 +1,8 @@
 {
-    "disasemble": true,
+    "disassemble": true,
+    "objdump": "riscv64-unknown-elf-objdump",
     "data_forwarding": true,
-    "branch_prediction": "btfnt",
+    "branch_predictor": "btfnt",
     "stack_size": 1024,
     "alu_cycles": {
         "add_sub": 1,
@@ -15,6 +16,7 @@
         "sbrk": 1000,
         "readint": 10000
     },
+    "memory_cycles": 100,
     "cache": [
         {
             "name": "L1_instruction_cache",
@@ -58,6 +60,5 @@
             "hit_cycles": 20,
             "cache_for": "memory"
         }
-    ],
-    "memory_cycles": 100
+    ]
 }
