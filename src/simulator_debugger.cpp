@@ -1,8 +1,6 @@
-#include <cstring>
 #include <string>
 #include <iostream>
 #include "simulator.hpp"
-#include "decode_helpers.hpp"
 using namespace std;
 
 const char *reg_abi_name[32] = {
@@ -48,7 +46,7 @@ bool Simulator::check_breakpoint(reg_t pc)
     return breakpoints.count(pc) > 0;
 }
 
-int Simulator::process_command()
+Simulator::cmd_num_t Simulator::process_command()
 {
     static string cmd, arg;
     while (true) {
@@ -71,7 +69,7 @@ int Simulator::process_command()
                 printf("error: the program is already running\n");
                 continue;
             }
-            return 2;
+            return CMD_RUN;
         }
         if (cmd == "c" || cmd == "continue") {
             stepping = false;
@@ -94,7 +92,7 @@ int Simulator::process_command()
                 }
             }
             breakpoints.insert(addr);
-            printf("add breakpoint at 0x%llx\n", addr);
+            printf("added breakpoint at 0x%llx\n", addr);
             continue;
         }
         if (cmd == "p" || cmd == "print") {
@@ -117,7 +115,7 @@ int Simulator::process_command()
                 printf("%s=0x%lx(%ld)\n", reg_name.c_str(), reg[index], reg[index]);
                 continue;
             }
-            printf("error: unsupported expression\n");
+            printf("error: unsupported expression (only registers are supported for now)\n");
             continue;
         }
         if (cmd.size() >= 2 && cmd[0] == 'x' && cmd[1] == '/') {
@@ -179,7 +177,7 @@ int Simulator::process_command()
                 printf("error: program is not running\n");
                 continue;
             }
-            return 1;
+            return CMD_KILL;
         }
         if (cmd == "s" || cmd == "step") {
             if (!running) {
@@ -199,5 +197,5 @@ int Simulator::process_command()
         }
         printf("error: unknown command\n");
     }
-    return 0;
+    return CMD_NOP;
 }

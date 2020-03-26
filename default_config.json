@@ -12,9 +12,10 @@
         "slt": 1
     },
     "ecall_cycles": {
-        "cputchar": 1000,
+        "cputchar": 2000,
         "sbrk": 1000,
-        "readint": 10000
+        "readint": 10000,
+        "time": 1000
     },
     "memory_cycles": 100,
     "cache": [

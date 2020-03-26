@@ -7,6 +7,7 @@
 
 typedef uint64_t reg_t;
 typedef uint32_t inst_t;
+typedef uint8_t reg_num_t;
 
 template<class... Args>
 static inline void throw_error(const char* __restrict format, Args... args)

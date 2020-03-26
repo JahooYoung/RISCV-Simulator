@@ -8,6 +8,7 @@ enum {
 	SYS_cputchar = 0,
     SYS_sbrk,
     SYS_readint,
+    SYS_time,
     SYS_exit = 93,
 	NSYSCALLS
 };

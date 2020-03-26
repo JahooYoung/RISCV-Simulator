@@ -7,17 +7,16 @@ syscall(int num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5
 {
 	int64_t ret;
 
-	// Generic system call: pass system call number in AX,
-	// up to five parameters in DX, CX, BX, DI, SI.
-	// Interrupt kernel with T_SYSCALL.
+	// Generic system call: pass system call number in a7,
+	// up to five parameters in a1, a2, a3, a4, a5.
+	// Interrupt kernel with `ecall`.
 	//
 	// The "volatile" tells the assembler not to optimize
 	// this instruction away just because we don't use the
 	// return value.
 	//
 	// The last clause tells the assembler that this can
-	// potentially change the condition codes and arbitrary
-	// memory locations.
+	// potentially change arbitrary memory locations.
 
 	asm volatile(
         "mv a1, %1\n"
@@ -51,7 +50,12 @@ void *sys_sbrk(size_t size)
     return (void*)syscall(SYS_sbrk, (uint64_t)size, 0, 0, 0, 0);
 }
 
-int sys_readint()
+int sys_readint(void)
 {
     return (int)syscall(SYS_readint, 0, 0, 0, 0, 0);
+}
+
+long sys_time(void)
+{
+    return (long)syscall(SYS_time, 0, 0, 0, 0, 0);
 }

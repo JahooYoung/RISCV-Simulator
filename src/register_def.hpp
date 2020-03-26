@@ -4,6 +4,8 @@
 #include <string>
 #include "types.hpp"
 
+#define REG_NUM 32
+
 #define REG_RA      1
 #define REG_SP      2
 #define REG_A0      10
@@ -82,7 +84,7 @@ struct EXReg : public PipeReg
 {
     bool compressed_inst;
     uint8_t opcode, funct3;
-    uint8_t rs1, rs2, rd;
+    reg_num_t rs1, rs2, rd;
     reg_t val1, val2, imm, valP;
     ALU_OP alu_op;
     reg_t predPC;
@@ -94,7 +96,7 @@ struct EXReg : public PipeReg
 struct MEMReg : public PipeReg
 {
     uint8_t opcode, funct3;
-    uint8_t rd;
+    reg_num_t rd;
     bool cond;
     reg_t valE, val2;
     reg_t predPC;
@@ -106,7 +108,7 @@ struct MEMReg : public PipeReg
 struct WBReg : public PipeReg
 {
     uint8_t opcode;
-    uint8_t rd;
+    reg_num_t rd;
     reg_t val;
 
     void update(const WBReg& r);

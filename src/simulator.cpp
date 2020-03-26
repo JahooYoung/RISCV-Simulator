@@ -1,7 +1,7 @@
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <iostream>
-#include <sstream>
 #include "simulator.hpp"
 #include "decode_helpers.hpp"
 using namespace std;
@@ -16,7 +16,8 @@ Simulator::Simulator(const json& config)
     verbose(config.value("verbose", false)),
     stack_size(config.value("stack_size", 1024)),  // KB
     elf_reader(config["elf_file"].get<string>()),
-    mem_sys(config["cache"], config.value("memory_cycles", 100))
+    mem_sys(config["cache"], config.value("memory_cycles", 100)),
+    running(false)
 {
     // read elf file
     string info_file = config.value("info_file", "");
@@ -52,9 +53,10 @@ Simulator::Simulator(const json& config)
 
     // get ecall cycles configuration
     json ecall_json = config["ecall_cycles"];
-    ecall_cycles[SYS_cputchar] = ecall_json.value("cputchar", 1000);
+    ecall_cycles[SYS_cputchar] = ecall_json.value("cputchar", 2000);
     ecall_cycles[SYS_sbrk] = ecall_json.value("sbrk", 1000);
     ecall_cycles[SYS_readint] = ecall_json.value("readint", 10000);
+    ecall_cycles[SYS_time] = ecall_json.value("time", 1000);
 }
 
 Simulator::~Simulator()
@@ -83,6 +85,27 @@ int Simulator::IF()
     return cycles;
 }
 
+inline reg_t Simulator::select_value(reg_num_t rs)
+{
+    if (data_forwarding && rs != 0) {
+        if (E.rd == rs) {
+            switch (E.opcode) {
+            case OP_JALR:
+            case OP_JAL:
+            case OP_BRANCH:
+                return m.val2;
+            default:
+                return m.valE;
+            }
+        } else if (M.rd == rs) {
+            return w.val;
+        } else if (W.rd == rs) {
+            return W.val;
+        }
+    }
+    return reg[rs];
+}
+
 int Simulator::ID()
 {
     if (D.bubble)
@@ -95,42 +118,8 @@ int Simulator::ID()
     parse_inst(D.inst, e);
 
     // get the register value of rs1 and rs2
-    e.val1 = reg[e.rs1];
-    e.val2 = reg[e.rs2];
-    if (data_forwarding && e.rs1 != 0) {
-        if (E.rd == e.rs1) {
-            switch (E.opcode) {
-            case OP_JALR:
-            case OP_JAL:
-            case OP_BRANCH:
-                e.val1 = m.val2;
-                break;
-            default:
-                e.val1 = m.valE;
-            }
-        } else if (M.rd == e.rs1) {
-            e.val1 = w.val;
-        } else if (W.rd == e.rs1) {
-            e.val1 = W.val;
-        }
-    }
-    if (data_forwarding && e.rs2 != 0) {
-        if (E.rd == e.rs2) {
-            switch (E.opcode) {
-            case OP_JALR:
-            case OP_JAL:
-            case OP_BRANCH:
-                e.val2 = m.val2;
-                break;
-            default:
-                e.val2 = m.valE;
-            }
-        } else if (M.rd == e.rs2) {
-            e.val2 = w.val;
-        } else if (W.rd == e.rs2) {
-            e.val2 = W.val;
-        }
-    }
+    e.val1 = select_value(e.rs1);
+    e.val2 = select_value(e.rs2);
 
     return 1;
 }
@@ -275,7 +264,6 @@ int Simulator::WB()
 
 void Simulator::process_control_signal()
 {
-    bool meet_ecall = (E.opcode == OP_ECALL || M.opcode == OP_ECALL || W.opcode == OP_ECALL);
     bool mispredicted =
         (((E.opcode == OP_BRANCH && m.cond) || E.opcode == OP_JALR || E.opcode == OP_JAL)
             && E.predPC != m.valE)
@@ -284,18 +272,19 @@ void Simulator::process_control_signal()
     d.bubble |= mispredicted;
     e.bubble |= mispredicted;
 
-    bool data_dependant;
+    bool meet_ecall = (E.opcode == OP_ECALL || M.opcode == OP_ECALL || W.opcode == OP_ECALL);
+    bool data_dependent = meet_ecall;
     if (data_forwarding) {
-        data_dependant = (e.rs1 != 0 && e.rs1 == E.rd && E.opcode == OP_LOAD) ||
+        data_dependent |= (e.rs1 != 0 && e.rs1 == E.rd && E.opcode == OP_LOAD) ||
             (e.rs2 != 0 && e.rs2 == E.rd && E.opcode == OP_LOAD);
     } else {
-        data_dependant = !mispredicted && (
+        data_dependent |= !mispredicted && (
             (e.rs1 != 0 && (E.rd == e.rs1 || M.rd == e.rs1 || W.rd == e.rs1)) ||
             (e.rs2 != 0 && (E.rd == e.rs2 || M.rd == e.rs2 || W.rd == e.rs2)));
     }
-    F.stall |= data_dependant | meet_ecall;
-    D.stall |= data_dependant | meet_ecall;
-    e.bubble |= data_dependant | meet_ecall;
+    F.stall |= data_dependent;
+    D.stall |= data_dependent;
+    e.bubble |= data_dependent;
 
     e.bubble |= D.bubble;
     m.bubble |= E.bubble;
@@ -313,6 +302,8 @@ void Simulator::run_prog()
     D.bubble = E.bubble = M.bubble = W.bubble = true;
     stepping = false;
     mem_sys.reset();
+    input_buffer.clear();
+    input_buffer.str("");
 
     elf_reader.load_elf(F.predPC, mem_sys);
 
@@ -324,6 +315,7 @@ void Simulator::run_prog()
     running = true;
     tick = 0;
     instruction_count = 0;
+    time_t begin_time = time(NULL);
     while (true) {
         f = {};
         d = {};
@@ -348,8 +340,9 @@ void Simulator::run_prog()
             if (W.opcode == OP_ECALL)
                 max_cycles = max(max_cycles, process_syscall());
         } catch (ExitEvent) {
+            time_t total_time = time(NULL) - begin_time;
             printf("======== above are user output ========\n");
-            printf("program exited normally\n");
+            printf("program exited normally in %ld seconds\n", total_time);
             printf("ticks: %lu\n", tick);
             printf("instruction_count: %lu\n", instruction_count);
             mem_sys.print_info();
@@ -370,7 +363,7 @@ void Simulator::run_prog()
 
         if (single_step && check_breakpoint(E.valP)) {
             print_pipeline();
-            if (process_command() == 1)
+            if (process_command() == CMD_KILL)
                 break;
         }
 
@@ -391,7 +384,6 @@ void Simulator::run_prog()
 
 int Simulator::process_syscall()
 {
-    static stringstream line;
     reg_t a1 = reg[REG_A1];
     switch (reg[REG_A7]) {
     case SYS_exit:
@@ -404,20 +396,23 @@ int Simulator::process_syscall()
         break;
     case SYS_readint: {
         int tmp;
-        if (!(line >> tmp)) {
-            line.clear();
+        if (!(input_buffer >> tmp)) {
+            input_buffer.clear();
             string buf;
             getline(cin, buf);
-            line << buf;
-            line >> tmp;
+            input_buffer << buf;
+            input_buffer >> tmp;
         }
         reg[REG_A0] = tmp;
         break;
     }
+    case SYS_time:
+        reg[REG_A0] = time(NULL);
+        break;
     default:
         throw_error("unsupported syscall number %d", reg[REG_A7]);
     }
-    return 0;
+    return ecall_cycles[reg[REG_A7]];
 }
 
 void Simulator::start()
@@ -426,9 +421,13 @@ void Simulator::start()
         run_prog();
         return;
     }
-    running = false;
+    printf("\nWelcome to the debugger of Jahoo's RISC-V simulator!\n\n");
+    printf("It currently support gdb's command including 'q(uit)', 'r(un)',\n");
+    printf("'b(reakpoint)', 'c(ontinue)', 's(tep)', 'n(ext)', 'p(rint)',\n");
+    printf("'x/' and 'q(uit)'.\n\n");
+    printf("Notice: the program is NOT loaded until the first run.\n\n");
     while (true) {
-        if (process_command() == 2)
+        if (process_command() == CMD_RUN)
             run_prog();
     }
 }
