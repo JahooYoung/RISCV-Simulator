@@ -72,6 +72,17 @@ void MemorySystem::load_segment(FILE *file, const Elf64_Phdr& phdr)
     }
 }
 
+void MemorySystem::write_str(uintptr_t va, const char *str)
+{
+    uintptr_t end = va + strlen(str);
+    while (va < end) {
+        int segment = min(end - va, PGSIZE - va % PGSIZE);
+        memcpy((void*)translate(va), str, segment);
+        va += segment;
+        str += segment;
+    }
+}
+
 uintptr_t MemorySystem::translate(reg_t ptr)
 {
     auto pte_p = page_table.find(PGADDR(ptr));

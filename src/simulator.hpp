@@ -3,11 +3,15 @@
 
 #include <set>
 #include <sstream>
+#include <vector>
+#include <string>
 #include <nlohmann/json.hpp>
 #include <syscall.h>
 #include "register_def.hpp"
 #include "elf_reader.hpp"
 #include "branch_predictor.hpp"
+
+using ArgumentVector = std::vector<std::string>;
 
 class Simulator
 {
@@ -25,6 +29,7 @@ private:
     // elf file related
     ElfReader elf_reader;
     InstructionMap inst_map;
+    ArgumentVector argv;
 
     // performace count
     size_t tick;
@@ -50,6 +55,7 @@ private:
     int WB();
     int process_syscall();
     void process_control_signal();
+    void init_stack();
     void run_prog();
 
     // debug related
@@ -57,7 +63,7 @@ private:
     bool stepping;
     std::set<uintptr_t> breakpoints;
     enum cmd_num_t {
-        CMD_NOP,
+        CMD_CONTINUE,
         CMD_RUN,
         CMD_KILL
     };
@@ -65,10 +71,11 @@ private:
     void print_regs();
     void print_pipeline();
     bool check_breakpoint(reg_t pc);
+    uint64_t evaluate(const std::string& exp);
     cmd_num_t process_command();
 
 public:
-    Simulator(const nlohmann::json& config);
+    Simulator(const nlohmann::json& config, ArgumentVector&& argv);
     ~Simulator();
     void start();
 };

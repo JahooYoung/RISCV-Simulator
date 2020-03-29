@@ -26,7 +26,7 @@ syscall(int num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5
         "mv a5, %5\n"
         "li a7, %6\n"
         "ecall\n"
-        "mv %1, a0"
+        "mv %0, a0"
         :   "=r" (ret)
         :   "r" (a1),
             "r" (a2),

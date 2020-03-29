@@ -20,6 +20,7 @@ typedef uint64_t pte_t;
 #define E_NO_MEM 1
 
 #define HEAP_START 0x800000000UL
+#define STACK_TOP  0x1000000000000UL
 
 class MemorySystem
 {
@@ -40,6 +41,7 @@ public:
     void reset();
     pte_t page_alloc(uintptr_t va);
     void load_segment(FILE *file, const Elf64_Phdr& phdr);
+    void write_str(uintptr_t va, const char *str);
     // return the number of cycles required
     int read_inst(reg_t ptr, inst_t& st);
     int read_data(reg_t ptr, reg_t& reg, int bytes);

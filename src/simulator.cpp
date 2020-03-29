@@ -1,5 +1,7 @@
 #include <cstring>
 #include <ctime>
+#include <csetjmp>
+#include <csignal>
 #include <string>
 #include <iostream>
 #include "simulator.hpp"
@@ -9,13 +11,17 @@ using nlohmann::json;
 
 class ExitEvent {};
 
-Simulator::Simulator(const json& config)
+static sigjmp_buf saved_env;
+
+
+Simulator::Simulator(const json& config, ArgumentVector&& argv)
     : disassemble(config.value("disassemble", true)),
     single_step(config.value("single_step", false)),
     data_forwarding(config.value("data_forwarding", true)),
     verbose(config.value("verbose", false)),
     stack_size(config.value("stack_size", 1024)),  // KB
     elf_reader(config["elf_file"].get<string>()),
+    argv(argv),
     mem_sys(config["cache"], config.value("memory_cycles", 100)),
     running(false)
 {
@@ -291,6 +297,49 @@ void Simulator::process_control_signal()
     w.bubble |= M.bubble;
 }
 
+void Simulator::init_stack()
+{
+    int stack_page_num = round_up(stack_size, 4);
+    for (int i = 0; i < stack_page_num; i++)
+        mem_sys.page_alloc(STACK_TOP - PGSIZE * (i + 1));
+
+    /**
+     * stack layout
+     *
+     * +-------------+  <--- STACK_TOP
+     * | arg strings |
+     * |     ...     |
+     * +-------------+
+     * |    NULL     |
+     * +-------------+
+     * | argv[argc-1]|
+     * +-------------+
+     * |     ...     |
+     * +-------------+
+     * |   argv[0]   |
+     * +-------------+
+     * |    argc     |
+     * +-------------+  <--- sp (16 bytes aligned)
+     */
+
+    int argc = argv.size();
+    size_t length_sum = 0;
+    for (auto arg: argv)
+        length_sum += arg.size() + 1;
+    char *string_store = (char*)STACK_TOP - length_sum;
+    uintptr_t *argv_store = (uintptr_t*)round_down(string_store, 8) - argc - 2;
+    argv_store = round_down(argv_store, 16) + 1;
+    reg[REG_SP] = (uintptr_t)argv_store - 8;
+    mem_sys.write_data(reg[REG_SP], argc, 4);
+    for (auto arg: argv) {
+        mem_sys.write_data((uintptr_t)argv_store, (uintptr_t)string_store, 8);
+        mem_sys.write_str((uintptr_t)string_store, arg.c_str());
+        string_store += arg.size() + 1;
+        argv_store++;
+    }
+    mem_sys.write_data((uintptr_t)argv_store, 0, 8);
+}
+
 void Simulator::run_prog()
 {
     memset(reg, 0, sizeof(reg));
@@ -307,10 +356,7 @@ void Simulator::run_prog()
 
     elf_reader.load_elf(F.predPC, mem_sys);
 
-    // initialize stack
-    reg[REG_SP] = 0xFFFFFFFFFFF0;
-    for (int i = 0; i < ((stack_size + 3) / 4); i++)
-        mem_sys.page_alloc(reg[REG_SP] - PGSIZE * i);
+    init_stack();
 
     running = true;
     tick = 0;
@@ -415,6 +461,11 @@ int Simulator::process_syscall()
     return ecall_cycles[reg[REG_A7]];
 }
 
+void SIGINT_handler(int signum)
+{
+    siglongjmp(saved_env, 1);
+}
+
 void Simulator::start()
 {
     if (!single_step) {
@@ -422,12 +473,24 @@ void Simulator::start()
         return;
     }
     printf("\nWelcome to the debugger of Jahoo's RISC-V simulator!\n\n");
-    printf("It currently support gdb's command including 'q(uit)', 'r(un)',\n");
-    printf("'b(reakpoint)', 'c(ontinue)', 's(tep)', 'n(ext)', 'p(rint)',\n");
-    printf("'x/' and 'q(uit)'.\n\n");
+    printf("It currently support gdb's command including 'run', 'kill'\n");
+    printf("'set', 'breakpoint', 'continue', 'step', 'next',\n");
+    printf("'info', 'print', 'x/' and 'quit'.\n\n");
     printf("Notice: the program is NOT loaded until the first run.\n\n");
     while (true) {
-        if (process_command() == CMD_RUN)
-            run_prog();
+        if (process_command() == CMD_RUN) {
+            auto old_handler = signal(SIGINT, SIGINT_handler);
+            if (sigsetjmp(saved_env, true) == 0) {
+                run_prog();
+            } else {
+                running = false;
+                printf("======== above are user output ========\n");
+                printf("received Ctrl-C, aborted\n");
+                print_pipeline();
+                print_regs();
+                mem_sys.print_info();
+            }
+            signal(SIGINT, old_handler);
+        }
     }
 }

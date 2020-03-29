@@ -8,9 +8,10 @@ by Jahoo
 - 程序运行后可输出动态指令数，周期数及其他性能相关信息
 - 可深度配置不同运算、系统调用、访存等所需的周期数
 - 可任意配置缓存的层次、大小、命中时间、写策略等参数
-- 带有自己实现的tinylib，目前包含`readint`，`printf`，`malloc`和`free`等函数
+- 自带一个精简的库tinylib
 - 可选择是否启用数据前递
 - 支持不同的转移预测策略
+- 支持命令行参数
 - 单步调试模式，支持反汇编、断点、打印寄存器、打印内存
 
 ## 使用说明
@@ -34,7 +35,7 @@ by Jahoo
 运行`./build/simulator --help`可查看用法及命令行参数：
 
 ```
-Usage: ./build/simulator [options] elf_file
+Usage: ./build/simulator [options] elf_file [args...]
 
 Options:
   -h, --help               Print this help
@@ -59,22 +60,30 @@ riscv64-unknown-elf-gcc -Iinclude -O2 -Wa,-march=rv64imc -static -o [output_file
 
 #### 便捷指令
 
-为了调试及运行方便，`GNUmakefile`中还提供了一些便捷指令。如`make run-add`，该指令会寻找`samples`目录下的`add.c`文件，编译输出到`samples/add`，然后作为输入调用模拟器。`make srun-add`则是单步模式，其他类似。
+为了调试及运行方便，`GNUmakefile`中还提供了一些便捷指令。如`make run-add`，该指令会寻找`samples`目录下的`add.c`文件，编译输出到`samples/add`，然后作为输入调用模拟器。`make srun-add`则是单步模式，其他类似。如果elf文件需要参数，则修改`ELF_ARGS`变量，比如`make run-add ELF_ARGS='1 2'`。
 
 #### 单步模式
 
-单步模式需要加`-s`选项，用法和gdb相似，支持以下指令：
+单步模式需要加`-s`选项，用法和gdb相似，支持以下指令（部分指令可缩写为前缀）：
 
 - 空指令（直接按回车）：执行上一条指令
-- `q/quit`：退出模拟器
-- `r/run`：装载并运行ELF文件
-- `k/kill`：结束程序
-- `c/continue`：继续执行直到遇到下一个断点或结束
-- `s/step`：单步（**直到流水线发生变化，可包括多个周期**）
-- `n/next`：与`step`功能**相同**
-- `b/breakpoint`：设置断点，参数是地址（16进制地址请加`0x`前缀）或符号（函数）名
-- `p/print $reg`：打印指定寄存器的值，`p $`可打印全部寄存器的值
-- `x/[n][xdufcs][bhwg]`：打印`n`个单位的内存，格式可以是`xdufcs`中的一个（跟printf类似），单位可以是`bhwg`中的一个（分别代表1、2、4、8个字节），参数是地址（16进制地址请加`0x`前缀）或符号（变量）名
+- `quit`：退出模拟器
+- `set args`：设置程序参数
+- `run`：装载并运行ELF文件，若带参数，则用此参数运行，否则以上一次`run`或`set args`设置的参数运行。若要以空参数运行，请用`set args`清空参数
+- `kill`：结束程序
+- `continue`：继续执行直到遇到下一个断点或结束
+- `step`：单步（**直到流水线发生变化，可包括多个周期**）
+- `next`：与`step`功能**相同**
+- `breakpoint expr`：设置断点，地址为表达式的值
+- `info`：打印信息，子命令可以是
+  - `registers`：打印所有（32个整数）寄存器的值
+  - `breakpoints`：打印已添加的断点
+- `print expr`：打印表达式的值
+- `x/[n][xdufcs][bhwg] expr`：打印以表达式的值为地址开始的`n`个单位的内存，格式可以是`xdufcs`中的一个（跟printf类似），单位可以是`bhwg`中的一个（分别代表1、2、4、8个字节）
+
+**注1**：目前表达式仅支持非负整数（16进制地址请加`0x`前缀）、寄存器（例如`$sp, $a0`）和符号（函数、全局变量）名
+
+**注2**：单步模式下，**程序运行时**发送SIGINT只会停止正在运行的程序，不会退出模拟器
 
 ## 库函数
 
@@ -82,8 +91,8 @@ tinylib有以下库函数：
 
 - `int readint()`：从`stdin`读一个整型
 - `printf`：与标准IO库相同
-- `malloc, free, calloc, realloc, srand, rand`：与标准库相同
-- `time`：与标准库相同
+- `malloc, free, calloc, realloc, srand, rand, atoi, isdigit`：与标准库相同
+- `long time()`：返回从Epoch以来的秒数
 
 ## 配置文件说明
 
@@ -119,7 +128,32 @@ tinylib有以下库函数：
 
 装载过程也比较简单，按照ELF文件中的每个程序头的信息依次将ELF文件中的内容写入内存即可。要注意的是程序头中有`filesz`和`memsz`之分，`filesz`是ELF文件中该段的内容大小，但内存中该段需要分配`memsz`的大小，多出来的部分需全设成零。
 
-装载后的初始化工作主要包括设置PC（程序头中的`e_entry`，对应`_start`函数），分配栈空间，初始化栈指针（默认为`0xFFFFFFFFFFF0`，16字节对齐），通用寄存器清零，流水线寄存器初始化为气泡（bubble）状态和性能计数器清零。
+装载后的初始化工作主要包括设置PC（程序头中的`e_entry`，对应`_start`函数），初始化栈和栈指针，通用寄存器清零，流水线寄存器初始化为气泡（bubble）状态和性能计数器清零。
+
+这里重点说一下初始化栈的过程。经过对`riscv64-unknown-elf-gcc`编译出来程序的分析，可以得到一个比较通用的栈布局：
+
+```
+/**
+  * stack layout
+  *
+  * +-------------+  <--- STACK_TOP
+  * | arg strings |
+  * |     ...     |
+  * +-------------+
+  * |    NULL     |
+  * +-------------+
+  * | argv[argc-1]|
+  * +-------------+
+  * |     ...     |
+  * +-------------+
+  * |   argv[0]   |
+  * +-------------+
+  * |    argc     |
+  * +-------------+  <--- sp (16 bytes aligned)
+  */
+```
+
+首先按照上面的布局计算sp以及每个部分的起始地址，然后将参数字符串复制到`arg strings`中，并把起始地址放入相应的`argv[]`中，最后将参数数量放到`argc`处（注意是int类型）。要注意的一点是预留`arg strings`的空间时要考虑到每个参数字符串的结束符`\0`。
 
 另外，为了调试方便，我借助`riscv64-unknown-elf-objdump`的输出进行反汇编，并将指令地址和汇编语句存入一个`map`中方便读取和查看。
 
@@ -276,7 +310,7 @@ syscall(int num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5
         "mv a5, %5\n"
         "li a7, %6\n"
         "ecall\n"
-        "mv %1, a0"
+        "mv %0, a0"
         :   "=r" (ret)
         :   "r" (a1),
             "r" (a2),
@@ -310,6 +344,8 @@ if (!W.stall && !W.bubble)
 
 该模拟器的调试功能比较简单，我将它集成在了`Simulator`类中（见`simulator.hpp`和`simulator_debugger.cpp`）。
 
-模拟器的调试部分主要参考了gdb的设计，从中抽取了一部分常用命令。调试接口包括命令处理、断点检查和打印通用寄存器和流水线寄存器信息。断点的维护使用标准库的`set`，因此添加断点和检查断点都非常简单。命令处理中会遇到含有符号的表达式，因此需要读取ELF文件时要把符号表保存下来。
+模拟器的调试部分主要参考了gdb的设计，从中抽取了一部分常用命令。调试接口包括命令处理、断点检查和打印通用寄存器和流水线寄存器信息。断点的维护使用标准库的`set`，因此添加断点和检查断点都非常简单。命令中的表达式可以含有符号，因此需要读取ELF文件时要把符号表保存下来，计算时再查找并取出相应符号的值。
 
 ## 其他说明
+
+暂无

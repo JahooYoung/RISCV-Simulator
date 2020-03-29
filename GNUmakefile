@@ -45,13 +45,13 @@ run-%-info: $(SAMPLE_PREFIX)/% $(TARGET)
 	$(TARGET) -i $<-info.txt $<
 
 run-%: $(SAMPLE_PREFIX)/% $(TARGET)
-	$(TARGET) $<
+	$(TARGET) $< $(ELF_ARGS)
 
 run-%-v: $(SAMPLE_PREFIX)/% $(TARGET)
 	$(TARGET) -v $< > samples/output.txt
 
 srun-%: $(SAMPLE_PREFIX)/% $(TARGET)
-	$(TARGET) -s $<
+	$(TARGET) -s $< $(ELF_ARGS)
 
 sample-%: $(SAMPLE_PREFIX)/%
 	@:

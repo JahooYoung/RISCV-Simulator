@@ -46,156 +46,183 @@ bool Simulator::check_breakpoint(reg_t pc)
     return breakpoints.count(pc) > 0;
 }
 
+uint64_t Simulator::evaluate(const string& exp)
+{
+    if (exp[0] == '$') {
+        string reg_name = exp.substr(1);
+        int index = 0;
+        for (; index < 32 && reg_abi_name[index] != reg_name; index++);
+        if (index == 32) {
+            throw_error("no register has name `%s`", reg_name.c_str());
+        }
+        return reg[index];
+    }
+    try {
+        return stoull(exp, nullptr, 0);
+    } catch (invalid_argument) {
+        try {
+            return elf_reader.symtab.at(exp).st_value;
+        } catch (out_of_range err) {
+            throw_error("cannot find symbol %s", exp.c_str());
+        }
+    }
+}
+
+inline bool is_prefix(const string& pre, const string& str)
+{
+    return str.find(pre) == 0;
+}
+
+void split(const string& s, ArgumentVector& result, char delim)
+{
+    result.clear();
+    string::size_type last_pos = s.find_first_not_of(delim);
+    string::size_type pos = s.find_first_of(delim, last_pos);
+    while (last_pos != string::npos || pos != string::npos) {
+        result.emplace_back(s.substr(last_pos, pos - last_pos));
+        last_pos = s.find_first_not_of(delim, pos);
+        pos = s.find_first_of(delim, last_pos);
+    }
+}
+
+#define REQUIRE_RUNNING if (!running) throw_error("program is not running")
+
+#define REQUIRE_NOT_RUNNING if (running) throw_error("the program is already running")
+
+#define EXPECT(posi, content) \
+    if (cmdline.size() <= posi) \
+        throw_error("error: expect " content " at the %dnd argument\n", posi)
+
+#define EXPECT_EXPRESSION(posi) EXPECT(posi, "expression")
+
 Simulator::cmd_num_t Simulator::process_command()
 {
-    static string cmd, arg;
+    static ArgumentVector cmdline;
     while (true) {
         printf("(sim) "); fflush(stdout);
         string line;
         getline(cin, line);
-        if (line != "") {
-            size_t space = line.find_first_of(' ');
-            if (space < line.size() - 1)
-                arg = line.substr(space + 1);
-            else
-                arg = "";
-            cmd = line.substr(0, space);
-        }
-        if (cmd == "q" || cmd == "quit") {
-            exit(EXIT_SUCCESS);
-        }
-        if (cmd == "r" || cmd == "run") {
-            if (running) {
-                printf("error: the program is already running\n");
-                continue;
+        if (line != "")
+            split(line, cmdline, ' ');
+        if (cmdline.size() == 0)
+            continue;
+
+        try {
+            const string& cmd = cmdline[0];
+            if (is_prefix(cmd, "quit")) {
+                exit(EXIT_SUCCESS);
             }
-            return CMD_RUN;
-        }
-        if (cmd == "c" || cmd == "continue") {
-            stepping = false;
-            break;
-        }
-        if (cmd == "b" || cmd == "breakpoint") {
-            if (arg == "") {
-                printf("error: no address/symbol provided\n");
-                continue;
+            else if (is_prefix(cmd, "run")) {
+                REQUIRE_NOT_RUNNING;
+                if (cmdline.size() > 1) {
+                    argv.resize(1);
+                    argv.insert(argv.end(), cmdline.begin() + 1, cmdline.end());
+                }
+                return CMD_RUN;
             }
-            long long addr;
-            try {
-                addr = stoll(arg, nullptr, 0);
-            } catch (invalid_argument) {
-                try {
-                    addr = elf_reader.symtab.at(arg).st_value;
-                } catch (out_of_range err) {
-                    printf("error: cannot find symbol %s\n", arg.c_str());
+            else if (cmd == "set") {
+                if (cmdline.size() == 1) {
+                    printf("error: argument required\n");
                     continue;
                 }
+                if (is_prefix(cmdline[1], "args")) {
+                    argv.resize(1);
+                    argv.insert(argv.end(), cmdline.begin() + 2, cmdline.end());
+                } else {
+                    printf("error: only 'set args' is supported currently\n");
+                }
             }
-            breakpoints.insert(addr);
-            printf("added breakpoint at 0x%llx\n", addr);
-            continue;
-        }
-        if (cmd == "p" || cmd == "print") {
-            if (arg == "") {
-                printf("error: no register provided\n");
-                continue;
+            else if (is_prefix(cmd, "breakpoint")) {
+                EXPECT_EXPRESSION(1);
+                uintptr_t addr = evaluate(cmdline[1]);
+                breakpoints.insert(addr);
+                printf("added breakpoint at 0x%llx\n", addr);
             }
-            if (arg[0] == '$') {
-                string reg_name = arg.substr(1);
-                if (reg_name == "") {
+            else if (is_prefix(cmd, "print")) {
+                EXPECT_EXPRESSION(1);
+                uint64_t value = evaluate(cmdline[1]);
+                printf("%s=0x%lx(%ld)\n", cmdline[1].c_str(), value, value);
+            }
+            else if (is_prefix(cmd, "info")) {
+                if (cmdline.size() == 1) {
+                    printf("\"info\" must be followed by the name of an info command.\n");
+                    printf("List of info subcommands:\n\n");
+                    printf("info registers -- List of registers and their contents\n");
+                    printf("info breakpoints -- List all breakpoints\n\n");
+                } else if (is_prefix(cmdline[1], "registers")) {
                     print_regs();
-                    continue;
+                } else if (is_prefix(cmdline[1], "breakpoints")) {
+                    int index = 0;
+                    for (auto bp: breakpoints)
+                        printf("%d: %lx\n", index++, bp);
+                } else {
+                    throw_error("undefined info command");
                 }
-                int index = 0;
-                for (; index < 32 && reg_abi_name[index] != reg_name; index++);
-                if (index == 32) {
-                    printf("error: no register has name `%s`", reg_name.c_str());
-                    continue;
-                }
-                printf("%s=0x%lx(%ld)\n", reg_name.c_str(), reg[index], reg[index]);
-                continue;
             }
-            printf("error: unsupported expression (only registers are supported for now)\n");
-            continue;
-        }
-        if (cmd.size() >= 2 && cmd[0] == 'x' && cmd[1] == '/') {
-            if (arg == "") {
-                printf("error: no address/symbol provided\n");
-                continue;
-            }
-            size_t size = 0;
-            long long addr;
-            try {
-                addr = stoll(arg, nullptr, 0);
-            } catch (invalid_argument) {
+            else if (cmd.size() >= 2 && cmd[0] == 'x' && cmd[1] == '/') {
+                EXPECT_EXPRESSION(1);
+                uintptr_t addr = evaluate(cmdline[1]);
+                size_t size = 0;
+                auto it = elf_reader.symtab.find(cmdline[1]);
+                if (it != elf_reader.symtab.end())
+                    size = it->second.st_size;
+                string format = cmd.substr(2);
+                size_t length = 0, nxt = 0;
                 try {
-                    const auto& symbol = elf_reader.symtab.at(arg);
-                    addr = symbol.st_value;
-                    size = symbol.st_size;
-                } catch (out_of_range err) {
-                    printf("error: cannot find symbol %s\n", arg.c_str());
-                    continue;
+                    length = stoull(format, &nxt);
+                    format = format.substr(nxt);
+                } catch (invalid_argument) {}
+                char fm = 'd', sz = 'g';
+                size_t step_size = 8;
+                for (char c: format) {
+                    switch (c) {
+                    case 'x':
+                    case 'd':
+                    case 'u':
+                    case 'f':
+                    case 'c':
+                    case 's':
+                        fm = c;
+                        break;
+                    case 'b':
+                        step_size >>= 1;
+                    case 'h':
+                        step_size >>= 1;
+                    case 'w':
+                        step_size >>= 1;
+                    case 'g':
+                        sz = c;
+                        break;
+                    }
                 }
+                if (nxt == 0)
+                    length = max(1UL, size / step_size);
+                mem_sys.output_memory(addr, fm, sz, length);
             }
-            string format = cmd.substr(2);
-            size_t length = 0, nxt = 0;
-            try {
-                length = stoll(format, &nxt);
-                format = format.substr(nxt);
-            } catch (invalid_argument) {}
-            char fm = 'd', sz = 'g';
-            size_t step_size = 8;
-            for (char c: format) {
-                switch (c) {
-                case 'x':
-                case 'd':
-                case 'u':
-                case 'f':
-                case 'c':
-                case 's':
-                    fm = c;
-                    break;
-                case 'b':
-                    step_size >>= 1;
-                case 'h':
-                    step_size >>= 1;
-                case 'w':
-                    step_size >>= 1;
-                case 'g':
-                    sz = c;
-                    break;
-                }
+            else if (is_prefix(cmd, "kill")) {
+                REQUIRE_RUNNING;
+                return CMD_KILL;
             }
-            if (nxt == 0)
-                length = max(1UL, size / step_size);
-            mem_sys.output_memory(addr, fm, sz, length);
-            continue;
+            else if (is_prefix(cmd, "continue")) {
+                REQUIRE_RUNNING;
+                stepping = false;
+                return CMD_CONTINUE;
+            }
+            else if (is_prefix(cmd, "step")) {
+                REQUIRE_RUNNING;
+                stepping = true;
+                return CMD_CONTINUE;
+            }
+            else if (is_prefix(cmd, "next")) {
+                REQUIRE_RUNNING;
+                stepping = true;
+                return CMD_CONTINUE;
+            }
+            else {
+                throw_error("unknown command");
+            }
+        } catch (runtime_error err) {
+            printf("error: %s\n", err.what());
         }
-        // commands below require the program to be running
-        if (cmd == "k" || cmd == "kill") {
-            if (!running) {
-                printf("error: program is not running\n");
-                continue;
-            }
-            return CMD_KILL;
-        }
-        if (cmd == "s" || cmd == "step") {
-            if (!running) {
-                printf("error: program is not running\n");
-                continue;
-            }
-            stepping = true;
-            break;
-        }
-        if (cmd == "n" || cmd == "next") {
-            if (!running) {
-                printf("error: program is not running\n");
-                continue;
-            }
-            stepping = true;
-            break;
-        }
-        printf("error: unknown command\n");
     }
-    return CMD_NOP;
 }

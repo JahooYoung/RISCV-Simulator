@@ -2,6 +2,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <utility>
 #include <nlohmann/json.hpp>
 #include "simulator.hpp"
 using namespace std;
@@ -9,7 +10,7 @@ using nlohmann::json;
 
 void print_help_and_exit(string name)
 {
-    cerr << "Usage: " + name + " [options] elf_file" << endl << endl;
+    cerr << "Usage: " + name + " [options] elf_file [args...]" << endl << endl;
     cerr << "Options:" << endl;
     cerr << "  -h, --help               Print this help" << endl;
     cerr << "  -c, --config config_file Specify the configuration file," << endl;
@@ -62,6 +63,10 @@ int main(int argc, char **argv)
     }
     config_patch["elf_file"] = argv[optind];
 
+    ArgumentVector args;
+    for (; optind < argc; optind++)
+        args.push_back(argv[optind]);
+
     // read config file
     ifstream config_file(config_filename);
     if (!config_file) {
@@ -72,7 +77,7 @@ int main(int argc, char **argv)
     config_file >> config;
     config.merge_patch(config_patch);
 
-    Simulator simulator(config);
+    Simulator simulator(config, move(args));
     simulator.start();
 
 

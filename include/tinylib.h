@@ -27,8 +27,11 @@ int sys_readint(void);
 #define time() sys_time()
 long sys_time(void);
 
-// lib/rand.c
+// lib/util.c
 void srand(unsigned int seed);
 int rand(void);
+#define isdigit(ch) tisdigit(ch)
+int tisdigit(char ch);
+int atoi(const char *str);
 
 #endif /* !JOS_INC_STDIO_H */
