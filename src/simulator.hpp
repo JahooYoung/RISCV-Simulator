@@ -34,6 +34,7 @@ private:
     // performace count
     size_t tick;
     size_t instruction_count;
+    size_t total_branch, correct_branch;
 
     // uppercase refer to pipeline registers, lowercase refer to
     // the signal to be written to the corresponding registers
@@ -43,12 +44,15 @@ private:
     MEMReg M, m;
     WBReg W, w;
 
+    // bypass registers
+    bool mispredicted;
+
     reg_t reg[REG_NUM];
     MemorySystem mem_sys;
     std::stringstream input_buffer;
 
     int IF();
-    reg_t select_value(reg_num_t rs);
+    reg_t select_reg_value(reg_num_t rs);
     int ID();
     int EX();
     int MEM();

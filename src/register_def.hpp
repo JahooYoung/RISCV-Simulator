@@ -55,7 +55,6 @@ enum ALU_OP
 
 struct PipeReg
 {
-    bool ready;
     bool stall, bubble;
     std::string asm_str;
 
@@ -73,8 +72,7 @@ struct IFReg : public PipeReg
 struct IDReg : public PipeReg
 {
     inst_t inst;
-    reg_t valP;
-    reg_t predPC;
+    reg_t pc;
 
     void update(const IDReg& r);
     void print();
@@ -85,9 +83,9 @@ struct EXReg : public PipeReg
     bool compressed_inst;
     uint8_t opcode, funct3;
     reg_num_t rs1, rs2, rd;
-    reg_t val1, val2, imm, valP;
     ALU_OP alu_op;
-    reg_t predPC;
+    reg_t val1, val2, imm;
+    reg_t pc;
 
     void update(const EXReg& r);
     void print();
@@ -99,7 +97,7 @@ struct MEMReg : public PipeReg
     reg_num_t rd;
     bool cond;
     reg_t valE, val2;
-    reg_t predPC;
+    reg_t pc;
 
     void update(const MEMReg& r);
     void print();

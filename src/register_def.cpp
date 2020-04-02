@@ -13,11 +13,9 @@ void PipeReg::print_inst()
 template<typename T>
 inline void _update(T& R, const T& r)
 {
-    if (R.stall) {
-        R.stall = false;
+    if (R.stall)
         return;
-    }
-    if (r.bubble) {
+    if (R.bubble) {
         R = {};
         R.bubble = true;
         return;
@@ -42,7 +40,7 @@ void IDReg::update(const IDReg& r)
 
 void IDReg::print()
 {
-    printf("        inst=0x%x valP=0x%lx predPC=0x%lx\n", inst, valP, predPC);
+    printf("        inst=0x%x pc=0x%lx\n", inst, pc);
 }
 
 void EXReg::update(const EXReg& r)
@@ -52,10 +50,10 @@ void EXReg::update(const EXReg& r)
 
 void EXReg::print()
 {
-    printf("        opcode=0x%02x funct3=0x%1x comp=%d predPC=0x%lx\n",
-        opcode, funct3, (int)compressed_inst, predPC);
+    printf("        opcode=0x%02x funct3=0x%1x comp=%d\n",
+        opcode, funct3, (int)compressed_inst);
     printf("        rd=%d rs1=%d rs2=%d alu_op=%d\n", rd, rs1, rs2, alu_op);
-    printf("        val1=%lx val2=%lx imm=%lx valP=%lx\n", val1, val2, imm, valP);
+    printf("        val1=%lx val2=%lx imm=%lx pc=%lx\n", val1, val2, imm, pc);
 }
 
 void MEMReg::update(const MEMReg& r)
@@ -65,7 +63,7 @@ void MEMReg::update(const MEMReg& r)
 
 void MEMReg::print()
 {
-    printf("        opcode=0x%02x funct3=0x%1x predPC=0x%lx\n", opcode, funct3, predPC);
+    printf("        opcode=0x%02x funct3=0x%1x\n", opcode, funct3);
     printf("        cond=%d rd=%d\n", (int)cond, rd);
     printf("        valE=%lx val2=%lx\n", valE, val2);
 }

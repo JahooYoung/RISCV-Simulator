@@ -136,7 +136,7 @@ Simulator::cmd_num_t Simulator::process_command()
                 EXPECT_EXPRESSION(1);
                 uintptr_t addr = evaluate(cmdline[1]);
                 breakpoints.insert(addr);
-                printf("added breakpoint at 0x%llx\n", addr);
+                printf("added breakpoint at 0x%lx\n", addr);
             }
             else if (is_prefix(cmd, "print")) {
                 EXPECT_EXPRESSION(1);

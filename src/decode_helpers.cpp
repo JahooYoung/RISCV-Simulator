@@ -471,6 +471,7 @@ void parse_inst(inst_t inst, EXReg& e)
         e.compressed_inst = true;
         parse_16b_inst(inst, e);
     } else {
+        e.compressed_inst = false;
         parse_32b_inst(inst, e);
     }
 }

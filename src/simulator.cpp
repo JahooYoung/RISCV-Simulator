@@ -40,6 +40,8 @@ Simulator::Simulator(const json& config, ArgumentVector&& argv)
         br_pred = new AlwaysTaken();
     else if (bpred_str == "btfnt")
         br_pred = new BTFNT();
+    else if (bpred_str == "branch_history_table")
+        br_pred = new BranchHistoryTable();
     else {
         cerr << "error: no branch prediction strategy named " << bpred_str << endl;
         exit(EXIT_FAILURE);
@@ -74,24 +76,41 @@ int Simulator::IF()
 {
     // select pc
     reg_t pc = F.predPC;
-    if (((M.opcode == OP_BRANCH && M.cond) || M.opcode == OP_JALR || M.opcode == OP_JAL)
-        && M.predPC != M.valE)
+    switch (M.opcode) {
+    case OP_BRANCH:
+        if (mispredicted)
+            pc = M.cond ? M.valE : M.val2;
+        break;
+    case OP_JALR:
         pc = M.valE;
-    else if (M.opcode == OP_BRANCH && !M.cond && M.predPC != M.val2)
-        pc = M.val2;
+        break;
+    }
 
     int cycles = mem_sys.read_inst(pc, d.inst);
-    if ((d.inst & 3) != 3)
-        d.inst &= 0xFFFF;
-    d.valP = pc;
+    d.pc = pc;
     d.asm_str = inst_map[pc];
 
     // predict pc
-    d.predPC = f.predPC = br_pred->predict(pc, d.inst);
+    // real hardware implementation only need to identify branch instruction
+    EXReg r;
+    parse_inst(d.inst, r);
+    switch (r.opcode) {
+    case OP_BRANCH:
+        f.predPC = br_pred->predict(pc + (r.compressed_inst ? 2 : 4), pc + r.imm);
+        break;
+    case OP_JAL:
+        f.predPC = pc + r.imm;
+        break;
+    case OP_JALR:
+        // f.predPC = pc + (r.compressed_inst ? 2 : 4);
+        // break;
+    default:
+        f.predPC = pc + (r.compressed_inst ? 2 : 4);
+    }
     return cycles;
 }
 
-inline reg_t Simulator::select_value(reg_num_t rs)
+inline reg_t Simulator::select_reg_value(reg_num_t rs)
 {
     if (data_forwarding && rs != 0) {
         if (E.rd == rs) {
@@ -118,14 +137,13 @@ int Simulator::ID()
         return 0;
 
     e.asm_str = D.asm_str;
-    e.valP = D.valP;
-    e.predPC = D.predPC;
+    e.pc = D.pc;
     // get opcode, funct3, imm, alu_op, rs1, rs2, rd, mem_op, compressed_inst
     parse_inst(D.inst, e);
 
     // get the register value of rs1 and rs2
-    e.val1 = select_value(e.rs1);
-    e.val2 = select_value(e.rs2);
+    e.val1 = select_reg_value(e.rs1);
+    e.val2 = select_reg_value(e.rs2);
 
     return 1;
 }
@@ -139,13 +157,14 @@ int Simulator::EX()
     m.opcode = E.opcode;
     m.funct3 = E.funct3;
     m.rd = E.rd;
-    m.predPC = E.predPC;
+    m.pc = E.pc;
 
+    // select m.val2
     switch (E.opcode) {
     case OP_JALR:  // jalr
     case OP_JAL:  // jal
     case OP_BRANCH:  // beq, ...
-        m.val2 = E.valP + (E.compressed_inst ? 2 : 4);
+        m.val2 = E.pc + (E.compressed_inst ? 2 : 4);
         break;
     default:
         m.val2 = E.val2;
@@ -162,7 +181,7 @@ int Simulator::EX()
     case OP_BRANCH:
     case OP_AUIPC:
     case OP_JAL:
-        valA = E.valP;
+        valA = E.pc;
         valB = E.imm;
         break;
     default:
@@ -270,31 +289,36 @@ int Simulator::WB()
 
 void Simulator::process_control_signal()
 {
-    bool mispredicted =
-        (((E.opcode == OP_BRANCH && m.cond) || E.opcode == OP_JALR || E.opcode == OP_JAL)
-            && E.predPC != m.valE)
-        || (E.opcode == OP_BRANCH && !m.cond && E.predPC != m.val2);
+    mispredicted = false;
+    if (E.opcode == OP_BRANCH) {
+        // m.val2 == E.pc + (E.compressed_inst ? 2 : 4)
+        reg_t predPC = br_pred->predict(m.val2, E.pc + E.imm);
+        mispredicted = predPC != (m.cond ? m.valE : m.val2);
+        br_pred->feedback(m.val2, m.cond);
+    }
 
-    d.bubble |= mispredicted;
-    e.bubble |= mispredicted;
+    bool meet_jalr = e.opcode == OP_JALR || E.opcode == OP_JALR;
 
     bool meet_ecall = (E.opcode == OP_ECALL || M.opcode == OP_ECALL || W.opcode == OP_ECALL);
-    bool data_dependent = meet_ecall;
+    bool data_dependent = false;
     if (data_forwarding) {
         data_dependent |= (e.rs1 != 0 && e.rs1 == E.rd && E.opcode == OP_LOAD) ||
-            (e.rs2 != 0 && e.rs2 == E.rd && E.opcode == OP_LOAD);
+                          (e.rs2 != 0 && e.rs2 == E.rd && E.opcode == OP_LOAD);
     } else {
-        data_dependent |= !mispredicted && (
-            (e.rs1 != 0 && (E.rd == e.rs1 || M.rd == e.rs1 || W.rd == e.rs1)) ||
-            (e.rs2 != 0 && (E.rd == e.rs2 || M.rd == e.rs2 || W.rd == e.rs2)));
+        data_dependent |= (e.rs1 != 0 && (E.rd == e.rs1 || M.rd == e.rs1 || W.rd == e.rs1)) ||
+                          (e.rs2 != 0 && (E.rd == e.rs2 || M.rd == e.rs2 || W.rd == e.rs2));
     }
-    F.stall |= data_dependent;
-    D.stall |= data_dependent;
-    e.bubble |= data_dependent;
 
-    e.bubble |= D.bubble;
-    m.bubble |= E.bubble;
-    w.bubble |= M.bubble;
+    data_dependent |= meet_ecall;
+    data_dependent &= !mispredicted;
+    meet_jalr &= !mispredicted && !data_dependent;
+
+    W.bubble = M.bubble;
+    M.bubble = E.bubble;
+    E.bubble = D.bubble || mispredicted || data_dependent;
+    D.bubble = mispredicted || meet_jalr;
+    D.stall = data_dependent;
+    F.stall = data_dependent || meet_jalr;
 }
 
 void Simulator::init_stack()
@@ -350,6 +374,7 @@ void Simulator::run_prog()
     W = {};
     D.bubble = E.bubble = M.bubble = W.bubble = true;
     stepping = false;
+    mispredicted = false;
     mem_sys.reset();
     input_buffer.clear();
     input_buffer.str("");
@@ -361,6 +386,7 @@ void Simulator::run_prog()
     running = true;
     tick = 0;
     instruction_count = 0;
+    total_branch = correct_branch = 0;
     time_t begin_time = time(NULL);
     while (true) {
         f = {};
@@ -391,6 +417,8 @@ void Simulator::run_prog()
             printf("program exited normally in %ld seconds\n", total_time);
             printf("ticks: %lu\n", tick);
             printf("instruction_count: %lu\n", instruction_count);
+            printf("branch (%s): total_branch=%lu accuracy=%.3f%%\n", br_pred->get_name(),
+                total_branch, (double)correct_branch / total_branch * 100);
             mem_sys.print_info();
             break;
         } catch (runtime_error err) {
@@ -407,7 +435,7 @@ void Simulator::run_prog()
             print_regs();
         }
 
-        if (single_step && check_breakpoint(E.valP)) {
+        if (single_step && check_breakpoint(E.pc)) {
             print_pipeline();
             if (process_command() == CMD_KILL)
                 break;
@@ -415,8 +443,11 @@ void Simulator::run_prog()
 
         process_control_signal();
 
-        if (!W.stall && !W.bubble)
-            instruction_count++;
+        if (E.opcode == OP_BRANCH) {
+            total_branch++;
+            correct_branch += !mispredicted;
+        }
+        instruction_count += !W.stall && !W.bubble;
 
         tick += max_cycles;
         F.update(f);

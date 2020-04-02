@@ -2,7 +2,7 @@
     "disassemble": true,
     "objdump": "riscv64-unknown-elf-objdump",
     "data_forwarding": true,
-    "branch_predictor": "btfnt",
+    "branch_predictor": "branch_history_table",
     "stack_size": 1024,
     "alu_cycles": {
         "add_sub": 1,
