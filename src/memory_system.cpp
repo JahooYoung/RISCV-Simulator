@@ -208,7 +208,8 @@ void MemorySystem::output_memory(uintptr_t va, char fm, char sz, size_t length)
 
 void MemorySystem::print_info()
 {
-    printf("heap_pointer: %lx (started from %lx)\n", heap_pointer, HEAP_START);
+    size_t heap_size = heap_pointer - HEAP_START;
+    printf("heap_size: 0x%lx(%lu) bytes\n", heap_size, heap_size);
     for (auto c: cache)
         c->print_info();
 }

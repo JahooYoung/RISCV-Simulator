@@ -33,7 +33,7 @@ Simulator::Simulator(const json& config, ArgumentVector&& argv)
         elf_reader.load_objdump(config.value("objdump", "riscv64-unknown-elf-objdump"), inst_map);
 
     // get branch predictor
-    string bpred_str = config.value("branch_predictor", "btfnt");
+    string bpred_str = config.value("branch_predictor", "branch_history_table");
     if (bpred_str == "never_taken")
         br_pred = new NeverTaken();
     else if (bpred_str == "always_taken")
@@ -292,7 +292,8 @@ void Simulator::process_control_signal()
     mispredicted = false;
     if (E.opcode == OP_BRANCH) {
         // m.val2 == E.pc + (E.compressed_inst ? 2 : 4)
-        reg_t predPC = br_pred->predict(m.val2, E.pc + E.imm);
+        // m.valE == E.pc + E.imm
+        reg_t predPC = br_pred->predict(m.val2, m.valE);
         mispredicted = predPC != (m.cond ? m.valE : m.val2);
         br_pred->feedback(m.val2, m.cond);
     }
@@ -319,6 +320,10 @@ void Simulator::process_control_signal()
     D.bubble = mispredicted || meet_jalr;
     D.stall = data_dependent;
     F.stall = data_dependent || meet_jalr;
+
+    mispredicted_time += mispredicted;
+    meet_jalr_time += meet_jalr;
+    data_dependent_time += data_dependent;
 }
 
 void Simulator::init_stack()
@@ -387,6 +392,7 @@ void Simulator::run_prog()
     tick = 0;
     instruction_count = 0;
     total_branch = correct_branch = 0;
+    mispredicted_time = meet_jalr_time = data_dependent_time = 0;
     time_t begin_time = time(NULL);
     while (true) {
         f = {};
@@ -415,10 +421,13 @@ void Simulator::run_prog()
             time_t total_time = time(NULL) - begin_time;
             printf("======== above are user output ========\n");
             printf("program exited normally in %ld seconds\n", total_time);
-            printf("ticks: %lu\n", tick);
-            printf("instruction_count: %lu\n", instruction_count);
+            printf("instructions=%lu cycles=%lu CPI=%.3f\n", instruction_count,
+                tick, (double)tick / instruction_count);
             printf("branch (%s): total_branch=%lu accuracy=%.3f%%\n", br_pred->get_name(),
                 total_branch, (double)correct_branch / total_branch * 100);
+            printf("mispredicted_time=%lu\n", mispredicted_time);
+            printf("meet_jalr_time=%lu\n", meet_jalr_time);
+            printf("data_dependent_time=%lu\n", data_dependent_time);
             mem_sys.print_info();
             break;
         } catch (runtime_error err) {

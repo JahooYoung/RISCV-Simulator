@@ -35,6 +35,7 @@ private:
     size_t tick;
     size_t instruction_count;
     size_t total_branch, correct_branch;
+    size_t mispredicted_time, meet_jalr_time, data_dependent_time;
 
     // uppercase refer to pipeline registers, lowercase refer to
     // the signal to be written to the corresponding registers

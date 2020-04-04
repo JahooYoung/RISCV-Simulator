@@ -134,7 +134,7 @@ int Cache::write(uintptr_t ptr)
 
 void Cache::print_info()
 {
-    printf("%20s: hit=%lu miss=%lu miss_rate=%.3f%%\n", name.c_str(),
+    printf("%20s: hit=%-10lu miss=%-10lu miss_rate=%.3f%%\n", name.c_str(),
         hit_num, miss_num, (double)miss_num / (hit_num + miss_num) * 100);
 }
 
