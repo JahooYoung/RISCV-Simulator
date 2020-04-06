@@ -1,8 +1,9 @@
-#ifndef JOS_INC_STDIO_H
-#define JOS_INC_STDIO_H
+#ifndef SIM_INCLUDE_TINYLIB_H
+#define SIM_INCLUDE_TINYLIB_H
 
-#include <stddef.h>
 #include <tinyarg.h>
+
+typedef unsigned long size_t;
 
 // lib/printfmt.c
 void printfmt(void (*putch)(int, void*), void *putdat, const char *fmt, ...);
@@ -22,16 +23,22 @@ void *calloc(size_t nmemb, size_t size);
 // lib/syscall.c
 void sys_cputchar(int ch);
 void *sys_sbrk(size_t size);
+
 #define readint() sys_readint()
 int sys_readint(void);
+
 #define time() sys_time()
 long sys_time(void);
 
 // lib/util.c
 void srand(unsigned int seed);
 int rand(void);
+
 #define isdigit(ch) tisdigit(ch)
 int tisdigit(char ch);
 int atoi(const char *str);
 
-#endif /* !JOS_INC_STDIO_H */
+#define assert(expr) _assert(#expr, expr)
+void _assert(char const* expr, int value);
+
+#endif /* !SIM_INCLUDE_TINYLIB_H */

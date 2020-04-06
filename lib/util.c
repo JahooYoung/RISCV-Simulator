@@ -29,3 +29,11 @@ int atoi(const char *str)
         num = num * 10 + *str - '0';
     return sign * num;
 }
+
+void _assert(char const* expr, int value)
+{
+    if (!value) {
+        printf("assertion failed: %s\n", expr);
+        exit(1);
+    }
+}

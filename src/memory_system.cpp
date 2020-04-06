@@ -3,6 +3,7 @@
 #include <cassert>
 #include <map>
 #include "memory_system.hpp"
+#include "elf_reader.hpp"
 using nlohmann::json;
 using namespace std;
 
@@ -66,8 +67,7 @@ void MemorySystem::load_segment(FILE *file, const Elf64_Phdr& phdr)
     for (uintptr_t va = phdr.p_vaddr; va < end; va = PGADDR(va) + PGSIZE) {
         page_alloc(va);
         size_t sz = min(PGSIZE - va % PGSIZE, filesz);
-        if (fread((void*)translate(va), sz, 1, file) != 1)
-            throw runtime_error("cannot load elf file");
+        fread_wrapper((void*)translate(va), sz, 1, file);
         filesz -= sz;
     }
 }

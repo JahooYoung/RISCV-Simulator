@@ -22,7 +22,7 @@ typedef unsigned int uint;
  * in, remove the #define MALLOC_DEBUG line. */
 // #define MALLOC_DEBUG
 #ifdef MALLOC_DEBUG
-#define dbg_printf(...) printf(__VA_ARGS__), fflush(stdout)
+#define dbg_printf(...) printf(__VA_ARGS__)
 #define checker(...) mm_checkheap(__VA_ARGS__)
 #else
 #define dbg_printf(...)
@@ -91,8 +91,8 @@ inline static void *GET_SON(void *p, uint i)
 }
 
 /* global variables */
-static void *root; // the root of the splay tree
-static void **segList; // the small-size segregated list
+static void *root = NULL; // the root of the splay tree
+static void **segList = NULL; // the small-size segregated list
 
 #ifdef MALLOC_DEBUG
 int op_counter;
@@ -108,7 +108,7 @@ static void splay(int depth, void **path_list, int *dir_list)
 {
     if (depth == 0) return;
 
-    dbg_printf("  depth: %d\n", depth);
+    // dbg_printf("  depth: %d\n", depth);
 
     void *x = path_list[depth - 1];
     while (depth > 2)
@@ -368,11 +368,8 @@ int mm_init(void)
  */
 void *malloc(size_t size)
 {
-    static int initialized = 0;
-    if (!initialized) {
-        initialized = 1;
+    if (!segList)
         mm_init();
-    }
 
     uint asize = ALIGN(size + sizeof(uint));
     if (asize < MIN_BLOCK_SIZE)
@@ -381,8 +378,8 @@ void *malloc(size_t size)
     dbg_printf("op:%d\tmalloc: %lu(req)\t-> %d(real) => ",
                ++op_counter, size, asize);
 
-    dbg_printf("find! %llx\n", segList[1]);
     void *newptr = find_best_fit(asize);
+    // dbg_printf("find! %llx\n", newptr);
     if (newptr != NULL) // find an available free block!
     {
         delete_block(newptr);

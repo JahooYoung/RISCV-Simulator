@@ -5,9 +5,13 @@
 
 inline reg_t sign_extend(reg_t reg, int bits)
 {
-    reg = (-1ULL << bits) | reg;
-    reg += (((reg >> (bits - 1)) & 1) ^ 1) << bits;
-    return reg;
+    if (bits == 64 || ((reg >> (bits - 1)) & 1) == 0)
+        return reg;
+    else
+        return reg | (-1ULL << bits);
+    // reg = (-1ULL << bits) | reg;
+    // reg += (((reg >> (bits - 1)) & 1) ^ 1) << bits;
+    // return reg;
 }
 
 inline reg_t zero_extend(reg_t reg, int bits)

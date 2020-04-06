@@ -9,7 +9,11 @@
 using namespace std;
 using nlohmann::json;
 
-class ExitEvent {};
+struct ExitEvent
+{
+    reg_t status;
+    ExitEvent(reg_t status) : status(status) {}
+};
 
 static sigjmp_buf saved_env;
 
@@ -102,8 +106,6 @@ int Simulator::IF()
         f.predPC = pc + r.imm;
         break;
     case OP_JALR:
-        // f.predPC = pc + (r.compressed_inst ? 2 : 4);
-        // break;
     default:
         f.predPC = pc + (r.compressed_inst ? 2 : 4);
     }
@@ -244,21 +246,12 @@ int Simulator::MEM()
     int cycles = 1;
     switch (M.opcode) {
     case OP_LOAD:
-        if (M.funct3 < 4)
+        if (M.funct3 < 4) {
             cycles = mem_sys.read_data(M.valE, w.val, 1 << M.funct3);
-        else
-            cycles = mem_sys.read_data(M.valE, w.val, 1 << (M.funct3 - 4));
-        switch (M.funct3) {
-        case 0:
-        case 1:
-        case 2:
             w.val = sign_extend(w.val, 8 << M.funct3);
-            break;
-        case 4:  // lbu
-        case 5:  // lhu
-        case 6:  // lwu
+        } else {
+            cycles = mem_sys.read_data(M.valE, w.val, 1 << (M.funct3 - 4));
             w.val = zero_extend(w.val, 8 << (M.funct3 - 4));
-            break;
         }
         break;
     case OP_STORE:
@@ -417,10 +410,10 @@ void Simulator::run_prog()
             stage = "ecall";
             if (W.opcode == OP_ECALL)
                 max_cycles = max(max_cycles, process_syscall());
-        } catch (ExitEvent) {
+        } catch (ExitEvent e) {
             time_t total_time = time(NULL) - begin_time;
             printf("======== above are user output ========\n");
-            printf("program exited normally in %ld seconds\n", total_time);
+            printf("program exited %lu in %ld seconds\n", e.status, total_time);
             printf("instructions=%lu cycles=%lu CPI=%.3f\n", instruction_count,
                 tick, (double)tick / instruction_count);
             printf("branch (%s): total_branch=%lu accuracy=%.3f%%\n", br_pred->get_name(),
@@ -429,6 +422,7 @@ void Simulator::run_prog()
             printf("meet_jalr_time=%lu\n", meet_jalr_time);
             printf("data_dependent_time=%lu\n", data_dependent_time);
             mem_sys.print_info();
+            printf("\n");
             break;
         } catch (runtime_error err) {
             printf("======== above are user output ========\n");
@@ -436,6 +430,7 @@ void Simulator::run_prog()
             print_pipeline();
             print_regs();
             mem_sys.print_info();
+            printf("\n");
             break;
         }
 
@@ -473,7 +468,7 @@ int Simulator::process_syscall()
     reg_t a1 = reg[REG_A1];
     switch (reg[REG_A7]) {
     case SYS_exit:
-        throw ExitEvent();
+        throw ExitEvent(reg[REG_A0]);
     case SYS_cputchar:
         printf("%c", (char)a1);
         break;

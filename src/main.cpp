@@ -75,6 +75,8 @@ int main(int argc, char **argv)
     }
     json config;
     config_file >> config;
+    config_file.close();
+
     config.merge_patch(config_patch);
 
     Simulator simulator(config, move(args));

@@ -13,6 +13,8 @@ using InstructionMap = std::map<uintptr_t, std::string>;
 
 using SymbolTable = std::map<std::string, Elf64_Sym>;
 
+void fread_wrapper(void *ptr, size_t size, size_t nmemb, FILE *stream);
+
 class ElfReader
 {
 private:

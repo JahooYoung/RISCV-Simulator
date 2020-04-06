@@ -6,8 +6,14 @@ using namespace std;
 
 void fread_wrapper(void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
-    if (fread(ptr, size, nmemb, stream) != nmemb)
-        throw_error("cannot read elf file");
+    size *= nmemb;
+    size_t cnt = 0;
+    while ((cnt = fread(ptr, 1, size, stream)) != size) {
+        if (feof(stream) || ferror(stream))
+            throw_error("cannot read elf file");
+        ptr = ptr + cnt;
+        size -= cnt;
+    }
 }
 
 ElfReader::ElfReader(const string& _elf_filename)
@@ -141,13 +147,15 @@ void ElfReader::output_elf_info(const string& info_filename)
 
     // print symbol table
     fprintf(info_file, "\n\nSymbol table:\n");
+    int i = 0;
     for (const auto& symbol: symtab) {
-        fprintf(info_file, "  Name: %s\n", symbol.first.c_str());
-        fprintf(info_file, "  Bind: %u\n", ELF64_ST_BIND(symbol.second.st_info));
-        fprintf(info_file, "  Type: %u\n", ELF64_ST_TYPE(symbol.second.st_info));
-        fprintf(info_file, "  NDX: %u\n", symbol.second.st_shndx);
-        fprintf(info_file, "  Size: %lu\n", symbol.second.st_size);
-        fprintf(info_file, "  Value: %lx\n", symbol.second.st_value);
+        fprintf(info_file, "    [%3d]\n", i++);
+        fprintf(info_file, "        Name: %s\n", symbol.first.c_str());
+        fprintf(info_file, "        Bind: %u\n", ELF64_ST_BIND(symbol.second.st_info));
+        fprintf(info_file, "        Type: %u\n", ELF64_ST_TYPE(symbol.second.st_info));
+        fprintf(info_file, "        NDX: %u\n", symbol.second.st_shndx);
+        fprintf(info_file, "        Size: %lu\n", symbol.second.st_size);
+        fprintf(info_file, "        Value: %lx\n", symbol.second.st_value);
     }
 
     fclose(info_file);
