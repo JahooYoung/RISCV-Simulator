@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <unordered_map>
 #include <vector>
-#include <nlohmann/json.hpp>
+#include <yaml-cpp/yaml.h>
 #include "types.hpp"
 #include "elf.hpp"
 #include "cache.hpp"
@@ -33,22 +33,29 @@ private:
     Storage *inst_entry, *data_entry;
     Memory *memory;
 
+    size_t total_memory_access_cycles;
+    size_t memory_access_num;
+
     uintptr_t translate(reg_t ptr);
 
 public:
-    MemorySystem(const nlohmann::json& cache_list, int memory_cycles);
+    MemorySystem(const YAML::Node& cache_list, int memory_cycles);
     ~MemorySystem();
     void reset();
     pte_t page_alloc(uintptr_t va);
     void load_segment(FILE *file, const Elf64_Phdr& phdr);
     void write_str(uintptr_t va, const char *str);
+
     // return the number of cycles required
     int read_inst(reg_t ptr, inst_t& st);
     int read_data(reg_t ptr, reg_t& reg, int bytes);
     int write_data(reg_t ptr, reg_t reg, int bytes);
     uintptr_t sbrk(size_t size);
+
     void output_memory(uintptr_t va, char fm, char sz, size_t length);
     void print_info();
+
+    void run_trace(const std::string& trace_file);
 };
 
 #endif

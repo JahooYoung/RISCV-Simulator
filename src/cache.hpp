@@ -2,7 +2,7 @@
 #define CACHE_HPP
 
 #include <string>
-#include <nlohmann/json.hpp>
+#include <yaml-cpp/yaml.h>
 #include "types.hpp"
 
 class Storage
@@ -36,7 +36,7 @@ private:
     CacheLine* get_cache_line(uintptr_t ptr);
 
 public:
-    Cache(const nlohmann::json& config);
+    Cache(const YAML::Node& config);
     ~Cache();
     std::string get_name() const;
     unsigned get_line_size() const;

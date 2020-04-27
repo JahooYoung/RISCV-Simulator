@@ -1,6 +1,6 @@
 CXX := g++
 CXXFLAGS := -Wall -O3 -std=c++17 -Ithird_party -Iinclude
-LFLAGS :=
+LFLAGS := -lyaml-cpp
 PREFIX := build
 TARGET := $(PREFIX)/simulator
 SRC_DIR := src
@@ -26,7 +26,7 @@ $(shell mkdir -p $(LIB_PREFIX))
 all: $(TARGET) $(LIB)
 
 $(TARGET): $(OBJS)
-	$(CXX) $(LFLAGS) -o $@ $^
+	$(CXX) -o $@ $^ $(LFLAGS)
 
 $(PREFIX)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -MD -c -o $@ $<

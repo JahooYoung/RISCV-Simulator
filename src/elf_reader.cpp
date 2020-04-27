@@ -11,7 +11,7 @@ void fread_wrapper(void *ptr, size_t size, size_t nmemb, FILE *stream)
     while ((cnt = fread(ptr, 1, size, stream)) != size) {
         if (feof(stream) || ferror(stream))
             throw_error("cannot read elf file");
-        ptr = ptr + cnt;
+        ptr = (char*)ptr + cnt;
         size -= cnt;
     }
 }
@@ -70,7 +70,7 @@ ElfReader::ElfReader(const string& _elf_filename)
             symtab[stradr + elf64_sym.st_name] = elf64_sym;
         }
         delete[] stradr;
-    } catch (runtime_error err) {
+    } catch (const runtime_error& err) {
         cerr << "error: " << err.what() << endl;
         exit(EXIT_FAILURE);
     }
@@ -192,7 +192,7 @@ void ElfReader::load_elf(reg_t& pc, MemorySystem& mem_sys)
         for (const auto& elf64_phdr: program_header) {
             mem_sys.load_segment(elf_file, elf64_phdr);
         }
-    } catch (runtime_error err) {
+    } catch (const runtime_error& err) {
         cerr << "error: " << err.what() << endl;
         exit(EXIT_FAILURE);
     }

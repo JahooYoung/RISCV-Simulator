@@ -206,7 +206,7 @@ inline void parse_16b_inst(inst_t inst, EXReg& e)
                     uint8_t funct1 = getbits(inst, 12, 1);
                     //! Does not maintain e.funct3
                     tie(e.opcode, e.alu_op) = C_R_op_map.at(funct << 2 | funct1);
-                } catch (out_of_range) {
+                } catch (const out_of_range&) {
                     throw_error("reserved compressed inst");
                 }
                 break;
@@ -387,7 +387,7 @@ inline void parse_32b_inst(inst_t inst, EXReg& e)
         parse_R_Type(inst, e, funct7);
         try {
             e.alu_op = R_alu_op_map.at(e.funct3).at(funct7);
-        } catch (out_of_range err) {
+        } catch (const out_of_range& err) {
             throw_error(msg_template, inst, e.opcode, e.funct3, funct7);
         }
         break;
@@ -395,7 +395,7 @@ inline void parse_32b_inst(inst_t inst, EXReg& e)
         parse_R_Type(inst, e, funct7);
         try {
             e.alu_op = R_alu_op_map.at(e.funct3).at(funct7);
-        } catch (out_of_range err) {
+        } catch (const out_of_range& err) {
             throw_error(msg_template, inst, e.opcode, e.funct3, funct7);
         }
         break;
@@ -414,7 +414,7 @@ inline void parse_32b_inst(inst_t inst, EXReg& e)
         }
         try {
             e.alu_op = I_alu_op_map.at(e.funct3).at(funct7);
-        } catch (out_of_range err) {
+        } catch (const out_of_range& err) {
             throw_error(msg_template, inst, e.opcode, e.funct3, funct7);
         }
         break;
@@ -429,7 +429,7 @@ inline void parse_32b_inst(inst_t inst, EXReg& e)
         }
         try {
             e.alu_op = I_alu_op_map.at(e.funct3).at(funct7);
-        } catch (out_of_range err) {
+        } catch (const out_of_range& err) {
             throw_error(msg_template, inst, e.opcode, e.funct3, funct7);
         }
         break;

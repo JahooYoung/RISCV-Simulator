@@ -1,0 +1,69 @@
+# 是否反汇编（单步模式中打印流水线时会使用）
+disassemble: true
+# riscv的objdump的路径（若不反汇编则可以忽略该参数）
+objdump: riscv64-unknown-elf-objdump
+# 是否进行数据前递
+data_forwarding: true
+# 转移预测策略
+branch_predictor: branch_history_table
+# 栈大小，单位是KB
+stack_size: 1024
+# 配置ALU不同运算所需周期数
+alu_cycles:
+  add_sub: 1
+  mul: 3
+  div_rem: 30
+  bit_op: 1
+  slt: 1
+# 配置不同系统调用所需周期数
+ecall_cycles:
+  cputchar: 2000
+  sbrk: 1000
+  readint: 10000
+  time: 1000
+# 访问主存所需周期数
+memory_cycles: 100
+# 配置Cache层次结构
+cache:
+  -
+    name: L1_instruction_cache  # 必须
+    instruction_entry: true  # 标注取指入口。最多只能有1个取指入口，若无，则直接访问主存
+    size: 48  # 必须，cache大小，单位为KB
+    associativity: 12  # 必须，关联度
+    # 每个cache line的大小，单位为Byte。
+    # 必须为2的幂且不小于8，且组数(size * 1024 / associativity / cache_line_bytes)也须是2的幂。
+    # 下一级cache的cache line大小必须**大于等于**这一级的大小。
+    # 默认是64
+    cache_line_bytes: 64
+    write_back: true  # 写命中时是否采用写回策略，默认采用
+    write_allocate: true  # 写不命中时是否采用写分配策略，默认采用
+    hit_cycles: 1  # 必须，缓存命中时所需周期数
+    cache_for: L2_cache  # 必须，下一级缓存/主存的名称
+  -
+    name: L1_data_cache
+    data_entry: true
+    size: 32
+    associativity: 8
+    cache_line_bytes: 64
+    write_back: true
+    write_allocate: true
+    hit_cycles: 1
+    cache_for: L2_cache
+  -
+    name: L2_cache
+    size: 512
+    associativity: 8
+    cache_line_bytes: 64
+    write_back: true
+    write_allocate: true
+    hit_cycles: 8
+    cache_for: L3_cache
+  -
+    name: L3_cache
+    size: 8192
+    associativity: 16
+    cache_line_bytes: 64
+    write_back: true
+    write_allocate: true
+    hit_cycles: 20
+    cache_for: memory

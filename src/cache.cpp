@@ -1,5 +1,4 @@
 #include "cache.hpp"
-using nlohmann::json;
 using namespace std;
 
 static inline int log2(int x)
@@ -10,19 +9,19 @@ static inline int log2(int x)
     return ret;
 }
 
-Cache::Cache(const json& config)
+Cache::Cache(const YAML::Node& config)
 {
     int size, line_size;
     try {
-        name = config.at("name").get<string>();
-        size = config.at("size").get<int>() * 1024;  // KB => Bytes
-        E = config.at("associativity").get<int>();
-        line_size = config.value("cache_line_bytes", 64);
-        write_back = config.value("write_back", true);
-        write_allocate = config.value("write_allocate", true);
-        hit_cycles = config.at("hit_cycles").get<int>();
-    } catch (nlohmann::detail::out_of_range err) {
-        printf("cache config error: %s\n", err.what());
+        name = config["name"].as<string>();
+        size = config["size"].as<int>() * 1024;  // KB => Bytes
+        E = config["associativity"].as<int>();
+        line_size = config["cache_line_bytes"].as<int>(64);
+        write_back = config["write_back"].as<bool>(true);
+        write_allocate = config["write_allocate"].as<bool>(true);
+        hit_cycles = config["hit_cycles"].as<int>();
+    } catch (const YAML::BadConversion&) {
+        printf("cache config error\n");
         exit(EXIT_FAILURE);
     }
     S = size / line_size / E;

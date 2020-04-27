@@ -1,4 +1,6 @@
-.vscode/
+/.vscode
 
-samples/
-build/
+/build
+
+/samples
+/traces

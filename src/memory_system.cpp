@@ -1,14 +1,14 @@
-#include <new>
 #include <cstring>
 #include <cassert>
+#include <new>
 #include <map>
+#include <fstream>
+#include <iostream>
 #include "memory_system.hpp"
 #include "elf_reader.hpp"
-using nlohmann::json;
 using namespace std;
 
-MemorySystem::MemorySystem(const json& cache_list, int memory_cycles)
-    : heap_pointer(HEAP_START)
+MemorySystem::MemorySystem(const YAML::Node& cache_list, int memory_cycles)
 {
     map<string, Storage*> storage_map;
     inst_entry = data_entry = memory = new Memory(memory_cycles);
@@ -19,15 +19,15 @@ MemorySystem::MemorySystem(const json& cache_list, int memory_cycles)
         cache.push_back(st);
         storage_map[st->get_name()] = st;
         min_line_size = min(min_line_size, st->get_line_size());
-        if (conf.value("instruction_entry", false))
+        if (conf["instruction_entry"].as<bool>(false))
             inst_entry = st;
-        if (conf.value("data_entry", false))
+        if (conf["data_entry"].as<bool>(false))
             data_entry = st;
     }
 
     for (auto &conf: cache_list) {
-        auto st = dynamic_cast<Cache*>(storage_map[conf["name"].get<string>()]);
-        st->set_next(storage_map[conf["cache_for"].get<string>()]);
+        auto st = dynamic_cast<Cache*>(storage_map[conf["name"].as<string>()]);
+        st->set_next(storage_map[conf["cache_for"].as<string>()]);
     }
 }
 
@@ -43,12 +43,16 @@ MemorySystem::~MemorySystem()
 void MemorySystem::reset()
 {
     heap_pointer = HEAP_START;
+
     for (const auto &pr: page_table)
         operator delete((void*)pr.second, align_val_t(PGSIZE));
     page_table.clear();
 
     for (auto c: cache)
         c->invalidate();
+
+    total_memory_access_cycles = 0;
+    memory_access_num = 0;
 }
 
 pte_t MemorySystem::page_alloc(uintptr_t va)
@@ -104,6 +108,8 @@ int MemorySystem::read_inst(reg_t ptr, uint32_t& st)
     int cycles = inst_entry->read(translate(ptr));
     if ((ptr & (min_line_size - 1)) > min_line_size - 4)
         cycles += inst_entry->read(translate(ptr + 2));
+    total_memory_access_cycles += cycles;
+    memory_access_num++;
     return cycles;
 }
 
@@ -127,6 +133,8 @@ int MemorySystem::read_data(reg_t ptr, reg_t& reg, int bytes)
     int cycles = data_entry->read(translate(ptr));
     if ((ptr & (min_line_size - 1)) > min_line_size - bytes)
         cycles += data_entry->read(translate(ptr + bytes - 1));
+    total_memory_access_cycles += cycles;
+    memory_access_num++;
     return cycles;
 }
 
@@ -149,6 +157,8 @@ int MemorySystem::write_data(reg_t ptr, reg_t reg, int bytes)
     int cycles = data_entry->write(translate(ptr));
     if ((ptr & (min_line_size - 1)) > min_line_size - bytes)
         cycles += data_entry->write(translate(ptr + bytes - 1));
+    total_memory_access_cycles += cycles;
+    memory_access_num++;
     return cycles;
 }
 
@@ -201,7 +211,7 @@ void MemorySystem::output_memory(uintptr_t va, char fm, char sz, size_t length)
             }
             break;
         }
-    } catch (runtime_error err) {
+    } catch (const runtime_error& err) {
         printf("\nerror: %s\n", err.what());
     }
 }
@@ -210,6 +220,40 @@ void MemorySystem::print_info()
 {
     size_t heap_size = heap_pointer - HEAP_START;
     printf("heap_size: 0x%lx(%lu) bytes\n", heap_size, heap_size);
+    printf("AMAT: %.2f cycles\n", (double)total_memory_access_cycles / memory_access_num);
     for (auto c: cache)
         c->print_info();
+}
+
+void MemorySystem::run_trace(const string& trace_file)
+{
+    ifstream f_trace(trace_file);
+    if (!f_trace) {
+        cerr << "error: cannot open " << trace_file << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    reset();
+    string action, addr_str;
+    while (f_trace >> action >> addr_str) {
+        uintptr_t addr;
+        try {
+            addr = stoull(addr_str, nullptr, 0);
+        } catch (const invalid_argument&) {
+            cerr << "invalid address: " << addr_str << endl;
+            exit(EXIT_FAILURE);
+        }
+        if (action == "r") {
+            total_memory_access_cycles += data_entry->read(addr);
+            memory_access_num++;
+        } else if (action == "w") {
+            total_memory_access_cycles += data_entry->write(addr);
+            memory_access_num++;
+        } else {
+            cerr << "invalid action: " << action << endl;
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    print_info();
 }

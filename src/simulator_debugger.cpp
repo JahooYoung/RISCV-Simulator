@@ -59,10 +59,10 @@ uint64_t Simulator::evaluate(const string& exp)
     }
     try {
         return stoull(exp, nullptr, 0);
-    } catch (invalid_argument) {
+    } catch (const invalid_argument&) {
         try {
             return elf_reader.symtab.at(exp).st_value;
-        } catch (out_of_range err) {
+        } catch (const out_of_range& err) {
             throw_error("cannot find symbol %s", exp.c_str());
         }
     }
@@ -171,7 +171,7 @@ Simulator::cmd_num_t Simulator::process_command()
                 try {
                     length = stoull(format, &nxt);
                     format = format.substr(nxt);
-                } catch (invalid_argument) {}
+                } catch (const invalid_argument&) {}
                 char fm = 'd', sz = 'g';
                 size_t step_size = 8;
                 for (char c: format) {
@@ -221,7 +221,7 @@ Simulator::cmd_num_t Simulator::process_command()
             else {
                 throw_error("unknown command");
             }
-        } catch (runtime_error err) {
+        } catch (const runtime_error& err) {
             printf("error: %s\n", err.what());
         }
     }

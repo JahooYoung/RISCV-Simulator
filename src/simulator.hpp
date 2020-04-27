@@ -5,7 +5,7 @@
 #include <sstream>
 #include <vector>
 #include <string>
-#include <nlohmann/json.hpp>
+#include <yaml-cpp/yaml.h>
 #include <syscall.h>
 #include "register_def.hpp"
 #include "elf_reader.hpp"
@@ -80,7 +80,7 @@ private:
     cmd_num_t process_command();
 
 public:
-    Simulator(const nlohmann::json& config, ArgumentVector&& argv);
+    Simulator(const YAML::Node& option, const YAML::Node& config, ArgumentVector&& argv);
     ~Simulator();
     void start();
 };

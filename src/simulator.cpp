@@ -7,7 +7,6 @@
 #include "simulator.hpp"
 #include "decode_helpers.hpp"
 using namespace std;
-using nlohmann::json;
 
 struct ExitEvent
 {
@@ -18,26 +17,26 @@ struct ExitEvent
 static sigjmp_buf saved_env;
 
 
-Simulator::Simulator(const json& config, ArgumentVector&& argv)
-    : disassemble(config.value("disassemble", true)),
-    single_step(config.value("single_step", false)),
-    data_forwarding(config.value("data_forwarding", true)),
-    verbose(config.value("verbose", false)),
-    stack_size(config.value("stack_size", 1024)),  // KB
-    elf_reader(config["elf_file"].get<string>()),
+Simulator::Simulator(const YAML::Node& option, const YAML::Node& config, ArgumentVector&& argv)
+    : disassemble(config["disassemble"].as<bool>(true)),
+    single_step(option["single_step"].as<bool>(false)),
+    data_forwarding(config["data_forwarding"].as<bool>(true)),
+    verbose(option["verbose"].as<bool>(false)),
+    stack_size(config["stack_size"].as<int>(1024)),  // KB
+    elf_reader(option["elf_file"].as<string>()),
     argv(argv),
-    mem_sys(config["cache"], config.value("memory_cycles", 100)),
+    mem_sys(config["cache"], config["memory_cycles"].as<int>(100)),
     running(false)
 {
     // read elf file
-    string info_file = config.value("info_file", "");
-    if (info_file != "")
-        elf_reader.output_elf_info(info_file);
+    if (option["info_file"])
+        elf_reader.output_elf_info(option["info_file"].as<string>());
+
     if (disassemble)
-        elf_reader.load_objdump(config.value("objdump", "riscv64-unknown-elf-objdump"), inst_map);
+        elf_reader.load_objdump(config["objdump"].as<string>("riscv64-unknown-elf-objdump"), inst_map);
 
     // get branch predictor
-    string bpred_str = config.value("branch_predictor", "branch_history_table");
+    string bpred_str = config["branch_predictor"].as<string>("branch_history_table");
     if (bpred_str == "never_taken")
         br_pred = new NeverTaken();
     else if (bpred_str == "always_taken")
@@ -52,23 +51,23 @@ Simulator::Simulator(const json& config, ArgumentVector&& argv)
     }
 
     // get alu cycles configuration
-    json alu_json = config["alu_cycles"];
-    alu_cycles[ALU_ADD] = alu_cycles[ALU_SUB] = alu_json.value("add_sub", 1);
+    YAML::Node alu_cycles_node = config["alu_cycles"];
+    alu_cycles[ALU_ADD] = alu_cycles[ALU_SUB] = alu_cycles_node["add_sub"].as<int>(1);
     alu_cycles[ALU_MUL] = alu_cycles[ALU_MULH] = alu_cycles[ALU_MULHSU] =
-        alu_cycles[ALU_MULHU] = alu_json.value("mul", 3);
+        alu_cycles[ALU_MULHU] = alu_cycles_node["mul"].as<int>(3);
     alu_cycles[ALU_DIV] = alu_cycles[ALU_DIVU] = alu_cycles[ALU_REM] =
-        alu_cycles[ALU_REMU] = alu_json.value("div_rem", 30);
+        alu_cycles[ALU_REMU] = alu_cycles_node["div_rem"].as<int>(30);
     alu_cycles[ALU_SLL] = alu_cycles[ALU_SRA] = alu_cycles[ALU_SRL] =
         alu_cycles[ALU_XOR] = alu_cycles[ALU_OR] = alu_cycles[ALU_AND] =
-        alu_json.value("bit_op", 1);
-    alu_cycles[ALU_SLT] = alu_cycles[ALU_SLTU] = alu_json.value("slt", 1);
+        alu_cycles_node["bit_op"].as<int>(1);
+    alu_cycles[ALU_SLT] = alu_cycles[ALU_SLTU] = alu_cycles_node["slt"].as<int>(1);
 
     // get ecall cycles configuration
-    json ecall_json = config["ecall_cycles"];
-    ecall_cycles[SYS_cputchar] = ecall_json.value("cputchar", 2000);
-    ecall_cycles[SYS_sbrk] = ecall_json.value("sbrk", 1000);
-    ecall_cycles[SYS_readint] = ecall_json.value("readint", 10000);
-    ecall_cycles[SYS_time] = ecall_json.value("time", 1000);
+    YAML::Node ecall_cycles_node = config["ecall_cycles"];
+    ecall_cycles[SYS_cputchar] = ecall_cycles_node["cputchar"].as<int>(2000);
+    ecall_cycles[SYS_sbrk] = ecall_cycles_node["sbrk"].as<int>(1000);
+    ecall_cycles[SYS_readint] = ecall_cycles_node["readint"].as<int>(10000);
+    ecall_cycles[SYS_time] = ecall_cycles_node["time"].as<int>(1000);
 }
 
 Simulator::~Simulator()
@@ -410,7 +409,7 @@ void Simulator::run_prog()
             stage = "ecall";
             if (W.opcode == OP_ECALL)
                 max_cycles = max(max_cycles, process_syscall());
-        } catch (ExitEvent e) {
+        } catch (const ExitEvent& e) {
             time_t total_time = time(NULL) - begin_time;
             printf("======== above are user output ========\n");
             printf("program exited %lu in %ld seconds\n", e.status, total_time);
@@ -424,7 +423,7 @@ void Simulator::run_prog()
             mem_sys.print_info();
             printf("\n");
             break;
-        } catch (runtime_error err) {
+        } catch (const runtime_error& err) {
             printf("======== above are user output ========\n");
             printf("runtime_error in %s: %s\n", stage, err.what());
             print_pipeline();

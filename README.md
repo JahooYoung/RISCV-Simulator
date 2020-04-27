@@ -22,6 +22,7 @@
 - g++（需支持c++17，推荐版本7.4.0或以上）
 - make
 - riscv-gnu-toolchain（包括riscv64-unknown-elf-gcc，riscv64-unknown-elf-ar，riscv64-unknown-elf-objdump）
+- libyaml-cpp（`sudo apt install libyaml-cpp-dev`）
 
 ### 编译
 
@@ -34,24 +35,29 @@
 运行`./build/simulator --help`可查看用法及命令行参数：
 
 ```
-Usage: ./build/simulator [options] elf_file [args...]
+Usage: ./build/simulator [options] elf_file|trace_file [args...]
 
 Options:
   -h, --help               Print this help
   -c, --config config_file Specify the configuration file,
-                           default is 'default_config.json'
+                           default is 'default_config.yml'
+Options for elf_file:
   -s                       Single step mode
   -i, --info info_file     Output filename of Elf information
   -v                       Verbose mode
 ```
 
-运行该模拟器**需要有配置文件**。配置文件是JSON格式，默认是项目中已提供的`default_config.json`。配置文件的内容及说明请见"配置文件说明"一节。
+运行该模拟器**需要有配置文件**。配置文件是YAML格式，默认是项目中已提供的`default_config.yml`。配置文件的内容及说明请见"配置文件说明"一节。
 
-该模拟器的输入是RISCV格式并静态链接`libtiny`的ELF文件。因此编译前应确保源代码只包含一个头文件`tinylib.h`，并**确保源代码没有使用其他库函数**（`riscv64-unknown-elf-gcc`可能会默认链接glibc/newlib的标准库函数，tinylib的库函数列表见“库函数”一节）。编译命令请参考
+该模拟器的输入有两种：
+
+1. RISCV格式并静态链接`libtiny`的ELF文件。编译前应确保源代码只包含一个头文件`tinylib.h`，并**确保源代码没有使用其他库函数**（`riscv64-unknown-elf-gcc`可能会默认链接glibc/newlib的标准库函数，tinylib的库函数列表见“库函数”一节）。编译命令请参考
 
 ```
 riscv64-unknown-elf-gcc -Iinclude -O2 -Wa,-march=rv64imc -static -o [output_file] [your_source_file] -Lbuild/lib -ltiny
 ```
+
+2. 访存trace文件。**注意这种文件必须以`.trace`为后缀。**
 
 `-i`选项会输出ELF文件的相关信息到指定的文件，输出内容包括ELF头、节头、程序头和符号表。
 
@@ -96,7 +102,7 @@ tinylib有以下库函数：
 
 ## 配置文件说明
 
-配置文件采用JSON格式，可配置的内容有
+配置文件采用YAML格式，可配置的内容有
 
 - `disassemble`：bool类型，表示是否反汇编（单步模式中打印流水线时会使用）
 - `objdump`：string类型，表示riscv的objdump的路径（若不反汇编则可以忽略该参数）
