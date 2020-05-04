@@ -4,3 +4,12 @@
 
 /samples
 /traces
+
+# virtualenv
+/bin
+/lib
+/share
+/pyvenv.cfg
+
+# jupyter
+/etc

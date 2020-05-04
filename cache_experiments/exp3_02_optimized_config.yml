@@ -1,0 +1,28 @@
+cache:
+- associativity: 2
+  cache_for: L2_cache
+  cache_line_bytes: 4096
+  data_entry: true
+  hit_cycles: 1
+  instruction_entry: true
+  name: L1_cache
+  size: 128
+  write_allocate: true
+  write_back: true
+- associativity: 4
+  cache_for: L3_cache
+  cache_line_bytes: 8192
+  hit_cycles: 2
+  name: L2_cache
+  size: 512
+  write_allocate: true
+  write_back: true
+- associativity: 4
+  cache_for: memory
+  cache_line_bytes: 8192
+  hit_cycles: 4
+  name: L3_cache
+  size: 8192
+  write_allocate: true
+  write_back: true
+memory_cycles: 13

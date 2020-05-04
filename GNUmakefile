@@ -4,7 +4,7 @@ LFLAGS := -lyaml-cpp
 PREFIX := build
 TARGET := $(PREFIX)/simulator
 SRC_DIR := src
-LIB_DIR := lib
+LIB_DIR := libtiny
 SAMPLE_PREFIX := samples
 
 RISCV_CC := riscv64-unknown-elf-gcc
@@ -12,7 +12,7 @@ RISCV_CFLAGS := -Iinclude -O2 -Wa,-march=rv64imc
 RISCV_AR := riscv64-unknown-elf-ar
 RISCV_OBJDUMP := riscv64-unknown-elf-objdump
 
-LIB_PREFIX := $(PREFIX)/lib
+LIB_PREFIX := $(PREFIX)/libtiny
 LIB := $(LIB_PREFIX)/libtiny.a
 
 SRCS := $(wildcard $(SRC_DIR)/*.cpp)

@@ -91,7 +91,7 @@ int Cache::read(uintptr_t ptr)
         return hit_cycles;
     }
     miss_num++;
-    int cycles = 0;
+    int cycles = hit_cycles;
     if (write_back && line->valid && line->dirty)
         cycles += next->write((line->tag << (b + s)) | (ptr & ((S - 1) << b)));
     cycles += next->read(ptr);
@@ -120,7 +120,7 @@ int Cache::write(uintptr_t ptr)
     miss_num++;
     if (!write_allocate)
         return next->write(ptr);
-    int cycles = 0;
+    int cycles = hit_cycles;
     if (write_back && line->valid && line->dirty)
         cycles += next->write((line->tag << (b + s)) | (ptr & ((S - 1) << b)));
     cycles += next->read(ptr);
